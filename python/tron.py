@@ -231,11 +231,18 @@ def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
     # des fois, tuer un enemi libère de la place pour un autre
     # appliquer exponentielle ou logarithme
 
-    score = count_accessible(state, state.get_head(player))
+    voronois = voronoi(state)
+
+    for (player, voronoi_for_player) in enumerate(voronois):
+        debug(f"voronoi for {player} : {voronoi_for_player}")
+
+    score = voronois[player]
 
     nb_alive = state.get_nb_alive()
 
-    return int(score * coeff / nb_alive) if nb_alive > 0 else 0
+    # return int(score * coeff / nb_alive) if nb_alive > 0 else 0
+
+    return score
 
 
 def count_accessible(state: State, origin) -> int:
@@ -259,6 +266,29 @@ def count_accessible(state: State, origin) -> int:
             debug(f"IndexError: origin={origin} current={current}", LOG_ERROR)
             counting_state.print(LOG_INFO)
     return count
+
+def voronoi(state: State) -> list[int]:
+    """returns an array so that voronoi[player]=nb of cell player is the nearest of"""
+    voronoi_state = state.copy()
+
+    remaining = []
+    for player, head in enumerate(state.heads):
+        if head > -1:
+            remaining += [(player, adjacent) for adjacent in state.get_valid_adjacent(head)]
+
+    counters = [0]*state.nb_players
+    while bool(remaining):  # == is not empty
+        (player, current) = remaining.pop()
+        if voronoi_state.is_free(current):
+            counters[player] += 1
+            voronoi_state.set_cell(current, player + 4)
+            for adjacent in voronoi_state.get_valid_adjacent(current):
+                remaining.insert(0, (player, adjacent))
+
+    debug(f"Voronoi")
+    voronoi_state.print()
+
+    return counters
 
 
 def print_direction(direction):
@@ -305,7 +335,7 @@ def game_loop():
 
 
         timer.reset()
-        state.print(LOG_INFO)
+        # state.print(LOG_INFO)
         direction = choose(me, state)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
