@@ -14,6 +14,8 @@ HEIGHT = 20
 WIDTH = 30
 MAX_CELL = HEIGHT * WIDTH
 
+MAX_SCORE = WIDTH * HEIGHT
+
 D_UP = -WIDTH
 D_DOWN = +WIDTH
 D_LEFT = -1
@@ -119,6 +121,15 @@ class State:
     def get_nb_alive(self):
         return reduce(lambda nb_alive, head: nb_alive + 1 if head > -1 else nb_alive, self.heads, 0)
 
+    def get_alive_players(self):
+        return [player for (player, head) in enumerate(self.heads) if head > -1]
+
+    def is_player_alive(self, player):
+        return self.heads[player] > -1
+
+    def get_winner(self) -> int:
+        alive_players = self.get_alive_players()
+        return alive_players[0] if len(alive_players) == 1 else -1
 
     def print(self, log_level=LOG_DEBUG):
         header = "_| " + " ".join([str(i % 10) for i in range(WIDTH)])
@@ -181,6 +192,42 @@ def choose(me: int, state: State) -> int:
 
     return max_move
 
+def choose_minmax_one(me: int, state: State) -> int:
+
+    best_move = 0
+    best_score = 0
+    for move in state.get_valid_moves_for_player(me):
+        debug(f"Evaluating my ({me}) move: {direction_str(move)}")
+        state_after_previous_player = state.with_player_move(me, move)
+
+        worst_score = MAX_SCORE
+        for turn in range(1, state.nb_players -1):
+            next_player = (me + turn) % state.nb_players
+            if not state.is_player_alive(next_player):
+                continue
+            next_player_moves = state_after_previous_player.get_valid_moves_for_player(next_player)
+            worst_score = MAX_SCORE
+            worst_state = None
+            for next_player_move in next_player_moves:
+                debug(f"Evaluating move of player {next_player}: {direction_str(next_player_move)}")
+                state_after_next_player_move = state_after_previous_player.with_player_move(next_player, next_player_move)
+                score = evaluate_for_player(state_after_next_player_move, me)
+                if score < worst_score:
+                    worst_score = score
+                    worst_state = state_after_next_player_move
+                    debug(f"New worst score for player {next_player}: {worst_score} ({direction_str(next_player_move)})")
+            if worst_state is not None:
+                state_after_previous_player = worst_state
+
+        if worst_score > best_score:
+            best_score = worst_score
+            best_move = move
+            debug(f"New best score : {best_score} ({direction_str(best_move)})")
+
+
+    return best_move
+
+
 def insert_sorted_desc_from_end(input_list, element, comparison_key_extractor):
     element_key = comparison_key_extractor(element)
     index = len(input_list) - 1
@@ -231,6 +278,9 @@ def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
     # des fois, tuer un enemi libère de la place pour un autre
     # appliquer exponentielle ou logarithme
 
+    if state.get_winner() == player:
+        return WIDTH*HEIGHT
+
     voronois = voronoi(state)
 
     for (player, voronoi_for_player) in enumerate(voronois):
@@ -238,7 +288,6 @@ def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
 
     score = voronois[player]
 
-    nb_alive = state.get_nb_alive()
 
     # return int(score * coeff / nb_alive) if nb_alive > 0 else 0
 
@@ -285,8 +334,8 @@ def voronoi(state: State) -> list[int]:
             for adjacent in voronoi_state.get_valid_adjacent(current):
                 remaining.insert(0, (player, adjacent))
 
-    debug(f"Voronoi")
-    voronoi_state.print()
+    # debug(f"Voronoi")
+    # voronoi_state.print()
 
     return counters
 
@@ -336,7 +385,7 @@ def game_loop():
 
         timer.reset()
         # state.print(LOG_INFO)
-        direction = choose(me, state)
+        direction = choose_minmax_one(me, state)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
