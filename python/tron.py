@@ -201,7 +201,7 @@ def choose_minmax_one(me: int, state: State) -> int:
         state_after_previous_player = state.with_player_move(me, move)
 
         worst_score = MAX_SCORE
-        for turn in range(1, state.nb_players -1):
+        for turn in range(1, state.nb_players):
             next_player = (me + turn) % state.nb_players
             if not state.is_player_alive(next_player):
                 continue
@@ -374,17 +374,19 @@ def game_loop():
             x0, y0, x1, y1 = [int(j) for j in input().split()]
 
             if x0 == -1:
-                debug(f"Killing p{player}")
-                state.kill(player)
-                state.print()
+                if state.is_player_alive(player):
+                    debug(f"Killing p{player}")
+                    state = state.kill(player)
             else:
-                cell = xy_to_cell(x1, y1)
-                state.set_cell(cell, player)
-                state.set_head(player, cell)
+                cell0 = xy_to_cell(x0, y0)
+                cell1 = xy_to_cell(x1, y1)
+                state.set_cell(cell0, player)
+                state.set_cell(cell1, player)
+                state.set_head(player, cell1)
 
 
         timer.reset()
-        # state.print(LOG_INFO)
+        state.print(LOG_INFO)
         direction = choose_minmax_one(me, state)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
