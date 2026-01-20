@@ -195,8 +195,10 @@ def choose(me: int, state: State) -> int:
 def choose_minmax_one(me: int, state: State) -> int:
 
     best_move = 0
-    best_score = 0
-    for move in state.get_valid_moves_for_player(me):
+    best_score = -MAX_SCORE
+    my_possible_moves = state.get_valid_moves_for_player(me)
+    debug(f"My possible moves: {[direction_str(move) for move in my_possible_moves]}")
+    for move in my_possible_moves:
         debug(f"Evaluating my ({me}) move: {direction_str(move)}")
         state_after_previous_player = state.with_player_move(me, move)
 
@@ -206,6 +208,7 @@ def choose_minmax_one(me: int, state: State) -> int:
             if not state.is_player_alive(next_player):
                 continue
             next_player_moves = state_after_previous_player.get_valid_moves_for_player(next_player)
+            debug(f"Player {next_player} possible moves: {[direction_str(move) for move in next_player_moves]}")
             worst_score = MAX_SCORE
             worst_state = None
             for next_player_move in next_player_moves:
@@ -269,7 +272,7 @@ def minmax_iterative(player, state, depth=0) -> int:
         continue_diving = bool(remaining) and (timer.elapsed_time_ratio() > 0.5 or turn_player != player)
 
 
-def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
+def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
     # prendre en compte la mort 0 = mort
     # mais toute partie fini forcément par mort
     # pour mitiger score = time to death
@@ -278,7 +281,7 @@ def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
     # des fois, tuer un enemi libère de la place pour un autre
     # appliquer exponentielle ou logarithme
 
-    if state.get_winner() == player:
+    if state.get_winner() == me:
         return WIDTH*HEIGHT
 
     voronois = voronoi(state)
@@ -286,7 +289,7 @@ def evaluate_for_player(state, player, coeff=1, depth=0) -> int:
     for (player, voronoi_for_player) in enumerate(voronois):
         debug(f"voronoi for {player} : {voronoi_for_player}")
 
-    score = voronois[player]
+    score = voronois[me]
 
 
     # return int(score * coeff / nb_alive) if nb_alive > 0 else 0
@@ -386,7 +389,8 @@ def game_loop():
 
 
         timer.reset()
-        state.print(LOG_INFO)
+        #state.print(LOG_INFO)
+        # (24,16)(6,6)(29,5)
         direction = choose_minmax_one(me, state)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
