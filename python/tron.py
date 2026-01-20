@@ -39,9 +39,11 @@ def cell_to_xy(cell):
 
 class Timer:
     start: float
+    steps: dict[str,float]
 
     def __init__(self):
         self.start = time.time()
+        self.steps = {}
 
     def elapsed_time_ratio(self):
         return self.elapsed_time() / 0.1  # max time = 100ms
@@ -53,7 +55,12 @@ class Timer:
     def reset(self):
         self.start = time.time()
 
+    def start_step(self, step):
+        self.steps[step] = time.time()
 
+    def stop_step(self, step) -> float:
+        return time.time() - self.steps.pop(step)
+        
 timer = Timer()
 
 class State:
@@ -322,6 +329,7 @@ def count_accessible(state: State, origin) -> int:
 def voronoi(state: State) -> list[int]:
     """returns an array so that voronoi[player]=nb of cell player is the nearest of"""
     voronoi_state = state.copy()
+    timer.start_step("voronoi")
 
     remaining = []
     for player, head in enumerate(state.heads):
@@ -337,7 +345,7 @@ def voronoi(state: State) -> list[int]:
             for adjacent in voronoi_state.get_valid_adjacent(current):
                 remaining.insert(0, (player, adjacent))
 
-    # debug(f"Voronoi")
+    debug(f"Voronoi took {timer.stop_step('voronoi') * 1000:.3f} ms")
     # voronoi_state.print()
 
     return counters
