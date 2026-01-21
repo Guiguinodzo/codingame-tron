@@ -325,11 +325,18 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
     on max node: if child.score > beta then beta = child.score 
     """
 
+    nb_visited = 0
+    nb_terminal_visited = 0
+    max_depth_reached = 0
 
     current_node = origin_node
     while True:
         if current_node is None:
             break
+
+        nb_visited += 1
+        if current_node.depth >= max_depth_reached:
+            max_depth_reached = current_node.depth
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
         debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
@@ -345,9 +352,10 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
         )
 
         if is_terminal_node:
-            current_node.score += evaluate_for_player(current_node.state, me)
+            current_node.score = evaluate_for_player(current_node.state, me)
             current_node.visited = True
             current_node = current_node.parent
+            nb_terminal_visited += 1
 
         elif not current_node.visited and moves:
             current_node.visited = True
@@ -426,6 +434,8 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             else:
                 current_node = current_node.parent
 
+    debug(f"End of minmax. Nb visited: {nb_visited}, Nb terminal visited: {nb_terminal_visited}, Max depth reached: {max_depth_reached}", LOG_INFO)
+
     if origin_node.children:
         best_child_node = max(origin_node.children, key=lambda child: child.score)
         debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}", LOG_INFO)
@@ -434,7 +444,7 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
         debug("No possible moves, going down both figuratively and literally.", LOG_ERROR)
         return D_DOWN
 
-def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
+def evaluate_for_player(state, me) -> int:
     # prendre en compte la mort 0 = mort
     # mais toute partie fini forcément par mort
     # pour mitiger score = time to death
@@ -452,9 +462,6 @@ def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
         debug(f"voronoi for {player} : {voronoi_for_player}")
 
     score = voronois[me]
-
-
-    # return int(score * coeff / nb_alive) if nb_alive > 0 else 0
 
     return score
 
@@ -540,9 +547,9 @@ def game_loop():
         print_direction(direction)
 
 # config
-LOG_THRESHOLD = LOG_DEBUG
+LOG_THRESHOLD = LOG_INFO
 MAX_DEPTH = 10
-MAX_TIME_RATIO = 0.75
+MAX_TIME_RATIO = 0.05
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
 
