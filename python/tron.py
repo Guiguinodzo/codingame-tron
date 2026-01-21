@@ -294,7 +294,7 @@ class Node:
         self.beta = MAX_SCORE
         self.parent = parent
         self.children = []
-        self.children_index = -1
+        self.children_index = 0
 
     def id(self):
         """
@@ -315,7 +315,7 @@ class Node:
         self.children.append(node)
 
     def current_child(self) -> Self:
-        return self.children[self.children_index]
+        return self.children[self.children_index] if self.children_index < len(self.children) else None
 
     def next_child(self) -> Self:
         self.children_index += 1
@@ -338,14 +338,14 @@ class Node:
         return self.depth == other.depth
 
 
-def minmax(state, me, max_turn=600) -> int:
+def minmax(state, me, max_depth=600) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
 
     nodes = queue.PriorityQueue()
     nodes.put(origin_node)
 
-    alpha = -MAX_SCORE
+    alpha = 0
     """
     on max node: if child.score > alpha then exit without visiting others children\n
     on min node: if child.score < alpha then alpha = child.score 
@@ -361,12 +361,16 @@ def minmax(state, me, max_turn=600) -> int:
         current_node : Node = nodes.get(False)
         debug(f"Current node: {current_node.id()}")
 
+        if current_node.parent is None and current_node.visited:
+            break
+
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
 
         is_terminal_node = (
             (not moves and current_node.current_player == me) # my turn and no move = loss
             or (current_node.state.get_winner() == me) # I won
+            or (current_node.current_player == me and current_node.depth > max_depth)
             # limit depth by depth or by time
         )
 
@@ -375,7 +379,7 @@ def minmax(state, me, max_turn=600) -> int:
             current_node.visited = True
             nodes.put(current_node.parent)
 
-        if not current_node.visited:
+        elif not current_node.visited and moves:
             current_node.visited = True
             current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
             current_node.children = []
@@ -390,9 +394,23 @@ def minmax(state, me, max_turn=600) -> int:
 
             nodes.put(current_node.next_child())
 
+        elif not current_node.visited and not moves and current_node.current_player != me:
+            current_node.visited = True
+            current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
+            current_node.children = []
+
+            state_after_player_death = current_node.state.kill(current_node.current_player)
+            next_player = state_after_player_death.next_player(current_node.current_player)
+            child_node = Node(me, state_after_player_death, next_player, D_DOWN, current_node.depth + 1)
+            child_node.parent = current_node
+            current_node.children.append(child_node)
+
+            nodes.put(current_node.next_child())
+
 
         elif current_node.is_max():
             last_solved_child = current_node.current_child()
+            debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
             if last_solved_child.score > current_node.score:
                 current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
@@ -412,13 +430,15 @@ def minmax(state, me, max_turn=600) -> int:
 
         else: # min
             last_solved_child = current_node.current_child()
+            if last_solved_child is None:
+                debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
             if last_solved_child.score < current_node.score:
                 current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
 
             if last_solved_child.score < alpha:
                 debug(f"{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
-                beta = last_solved_child.score
+                alpha = last_solved_child.score
 
             if last_solved_child.score < beta:
                 debug(f"{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
@@ -432,7 +452,7 @@ def minmax(state, me, max_turn=600) -> int:
     best_child_node = max(origin_node.children, key=lambda child: child.score)
     debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}")
 
-    return 0 # remove this
+    return best_child_node.move # remove this
 
 def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
     # prendre en compte la mort 0 = mort
@@ -533,7 +553,7 @@ def game_loop():
         #state.print(LOG_INFO)
         # (24,16)(6,6)(29,5)
         # direction = choose_minmax_one(me, state)
-        direction = minmax(state, me)
+        direction = minmax(state, me, max_depth=10)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
