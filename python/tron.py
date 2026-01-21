@@ -252,7 +252,6 @@ def insert_sorted_desc_from_end(input_list, element, comparison_key_extractor):
     # index = -1 or input[index] >= element_key
     input_list.insert(index + 1, element)
 
-@total_ordering
 class Node:
     state: State
     current_player: int
@@ -280,9 +279,7 @@ class Node:
         self.max = current_player == me
         self.depth = depth
         self.visited = False
-        self.score = 0
-        self.alpha = -MAX_SCORE
-        self.beta = MAX_SCORE
+        self.score = -MAX_SCORE if me == current_player else -MAX_SCORE
         self.parent = parent
         self.children = []
         self.children_index = 0
@@ -312,28 +309,11 @@ class Node:
         self.children_index += 1
         return self.children[self.children_index] if self.children_index < len(self.children) else None
 
-    # order is depth descending = lower (bigger) depth first
-    def __lt__(self, other):
-        return self.depth > other.depth
-
-    def __gt__(self, other):
-        return self.depth > other.depth
-
-    def __le__(self, other):
-        return self.depth >= other.depth
-
-    def __ge__(self, other):
-        return self.depth <= other.depth
-
-    def __eq__(self, other):
-        return self.depth == other.depth
-
-
 def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
 
-    alpha = 0
+    alpha = -MAX_SCORE
     """
     on max node: if child.score > alpha then exit without visiting others children\n
     on min node: if child.score < alpha then alpha = child.score 
@@ -376,7 +356,7 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
             for move in moves:
                 state_after_player_move = current_node.state.with_player_move(current_node.current_player, move)
-                # todo : next_player should be in state
+                # todo : next_player/current_player should be in state
                 next_player = state_after_player_move.next_player(current_node.current_player)
                 child_node = Node(me, state_after_player_move, next_player, move, current_node.depth + 1)
                 child_node.parent = current_node
@@ -552,7 +532,7 @@ def game_loop():
         print_direction(direction)
 
 # config
-LOG_THRESHOLD = LOG_INFO
+LOG_THRESHOLD = LOG_DEBUG
 MAX_DEPTH = 10
 MAX_TIME_RATIO = 0.75
 MAX_ACCESSIBLE_COUNT = 50

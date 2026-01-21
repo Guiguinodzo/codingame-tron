@@ -1,18 +1,35 @@
 import json
 import random
+import subprocess
 import sys
 import traceback
+from curses import wrapper
 from subprocess import Popen, PIPE
 from time import sleep
 
 from pexpect import fdpexpect
 
+from lib.display import Display
+
 HEIGHT = 20
 WIDTH = 30
 
 
-class Grid:
+class OutputWrapper:
+    text = ""
 
+    def write(self, txt):
+        self.text += txt
+
+    def get_text(self, beg = None, end = None):
+        return '\n'.join(self.text.split('\n')[beg:end])
+
+
+def log(*args):
+    print(*args, file=sys.stderr)
+
+
+class Grid:
     width: int
     height: int
     data: list[list[int]]
@@ -20,7 +37,7 @@ class Grid:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        self.data = [ ([-1]*height) for _ in range(width) ]
+        self.data = [([-1] * height) for _ in range(width)]
 
     def set(self, x, y, value):
         self.data[x][y] = value
@@ -39,7 +56,6 @@ class Grid:
 
 
 class Game:
-
     nb_players: int
     grid: Grid
     initial_coords: list[tuple[int, int]]
@@ -55,7 +71,7 @@ class Game:
         self.nb_players = len(initial_coords)
         self.grid = Grid(WIDTH, HEIGHT)
         self.initial_coords = initial_coords
-        self.heads = [(0, 0)]*self.nb_players
+        self.heads = [(0, 0)] * self.nb_players
         for (p, (x, y)) in enumerate(self.initial_coords):
             self.grid.set(x, y, p)
             self.heads[p] = (x, y)
@@ -63,17 +79,14 @@ class Game:
     def move_player(self, player, move: str) -> bool:
         (x, y) = self.heads[player]
         (dx, dy) = self.moves[move]
-        if self.grid.is_valid(x+dx, y+dy) and self.grid.get(x+dx, y+dy) == -1:
-            self.grid.set(x+dx, y+dy, player)
-            self.heads[player] = (x+dx, y+dy)
+        if self.grid.is_valid(x + dx, y + dy) and self.grid.get(x + dx, y + dy) == -1:
+            self.grid.set(x + dx, y + dy, player)
+            self.heads[player] = (x + dx, y + dy)
             return True
         else:
-            print(f'Invalid move: {move} : killing {player}')
+            log(f'Invalid move: {move} : killing {player}')
             self.heads[player] = (-1, -1)
-            for y in range(self.grid.height):
-                for x in range(self.grid.width):
-                    if self.grid.get(x,y) == player:
-                        self.grid.set(x, y, -1)
+            self.grid.replace(player, -1)
             return False
 
     def get_initial_coords(self, player):
@@ -86,12 +99,12 @@ class Game:
         return self.heads[player] == (-1, -1)
 
     def winner(self) -> int:
-        alive_players = [ p for p, (x, y) in enumerate(self.heads) if (x, y) != (-1, -1)]
+        alive_players = [p for p, (x, y) in enumerate(self.heads) if (x, y) != (-1, -1)]
         return alive_players[0] if len(alive_players) == 1 else -1
 
     def print(self):
         header = "_| " + " ".join([str(i % 10) for i in range(self.grid.width)])
-        print(header)
+        log(header)
         for y in range(self.grid.height):
             line = f"{y % 10}|"
             for x in range(self.grid.width):
@@ -102,7 +115,16 @@ class Game:
                         (str(value) if value >= 0 else '.')
                 )
                 line += cell_str
-            print(line)
+            log(line)
+
+    def print_in_display(self, display: Display):
+        for y in range(self.grid.height):
+            for x in range(self.grid.width):
+                value = self.grid.get(x, y)
+                if value >= 0:
+                    display.dot(x, y, value)
+        display.refresh()
+
 
 class AI:
     path: str
@@ -116,19 +138,19 @@ class AI:
 
     def __init__(self, path: str, initial_coords: tuple[int, int]):
         self.path = path
-        self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE)
+        self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE, stderr=subprocess.DEVNULL)
         self.running = True
         self.stdout = fdpexpect.fdspawn(self.process.stdout)
         self.stdin = fdpexpect.fdspawn(self.process.stdin)
         self.initial_coords = initial_coords
 
     def write_settings(self, nb_players, player_id):
-        print(f"Game settings input: {nb_players} {player_id}")
+        log(f"Game settings input: {nb_players} {player_id}")
         self.stdin.write(f"{nb_players} {player_id}\n")
         self.stdin.flush()
 
     def write_player_info(self, p, x0, y0, x1, y1):
-        print(f"Input for p={p} : {x0} {y0} {x1} {y1}")
+        log(f"Input for p={p} : {x0} {y0} {x1} {y1}")
         self.stdin.write(f"{x0} {y0} {x1} {y1}\n")
         self.stdin.flush()
 
@@ -143,16 +165,18 @@ class AI:
         self.process.kill()
         self.running = False
 
+
 class Config:
     ais: list[AiConfig] = []
     nb_players: int
 
     def __init__(self, config: dict) -> None:
-        self.ais = [ AiConfig(ai) for ai in config.get('ais', [])]
+        self.ais = [AiConfig(ai) for ai in config.get('ais', [])]
         self.nb_players = len(self.ais)
 
     def __str__(self):
         return json.dumps(self, default=lambda o: o.__dict__, indent=4)
+
 
 class AiConfig:
     program_path: str
@@ -162,15 +186,20 @@ class AiConfig:
         self.program_path = config['program_path']
         if not self.program_path:
             raise Exception(f"Invalid program_path: {config['program_path']}")
-        self.initial_coords = config.get('initial_coords', (int(random.random()*WIDTH), int(random.random()*HEIGHT)))
+        self.initial_coords = config.get('initial_coords',
+                                         (int(random.random() * WIDTH), int(random.random() * HEIGHT)))
 
     def __str__(self):
         return json.dumps(self, default=lambda o: o.__dict__, indent=4)
 
 
-def main():
+def main(stdscr):
+    output_wrapper = OutputWrapper()
+    sys.stderr = output_wrapper
 
-    ais : list[AI] = []
+    display = Display(stdscr)
+
+    ais: list[AI] = []
 
     try:
         args = sys.argv[1:]
@@ -191,20 +220,20 @@ def main():
                 }
             ]
         })
-        if len(args)>0:
+        if len(args) > 0:
             config_file_path = args[0]
             with open(config_file_path, 'r') as config_file:
                 json_config = json.load(config_file)
                 config = Config(json_config)
 
-        print(f"Config: {config}")
+        log(f"Config: {config}")
 
         for (player, ai_config) in enumerate(config.ais):
-            print(ai_config.program_path)
+            log(ai_config.program_path)
             ais.append(AI(ai_config.program_path, ai_config.initial_coords))
 
         game = Game([ai.initial_coords for ai in ais])
-        game.print()
+        # game.print()
 
         while game.winner() == -1:
             for player in range(game.nb_players):
@@ -212,7 +241,7 @@ def main():
                     continue
 
                 if game.is_dead(player):
-                    print(f'Player {player} is dead')
+                    log(f'Player {player} is dead')
                     ais[player].stop()
                     continue
 
@@ -224,17 +253,26 @@ def main():
                     ais[player].write_player_info(p, x0, y0, x1, y1)
 
                 player_move = ais[player].read_move()
-                print(f'Move for player {player} : {player_move}')
+                log(f'Move for player {player} : {player_move}')
 
                 game.move_player(player, player_move)
-            game.print()
-            sleep(0.5)
-            # input("Press any key to continue...")
 
-        print(f"Game over. Winner: {game.winner()}")
+            display.clear()
+            display.draw_frame(WIDTH, HEIGHT)
+            game.print_in_display(display)
+            display.refresh()
+            # sleep(0.1)
+            # display.wait_for_key()
+
+        log(f"Game over. Winner: {game.winner()}")
+
+        sys.stderr = sys.__stderr__
+
+        for line in output_wrapper.get_text():
+            log(line)
 
     except Exception:
-        print(traceback.format_exc())
+        log(traceback.format_exc())
         sys.exit(1)
     finally:
         if ais:
@@ -243,5 +281,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-
+    wrapper(main)

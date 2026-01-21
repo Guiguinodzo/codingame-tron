@@ -8,12 +8,11 @@
       ]
     },
     {
-      "program_path": "../python/jb.py",
+      "program_path": "../python/tron.py",
       "initial_coords": [
         1,
         5
       ]
     }
-  ],
-  "nb_players": 2
+  ]
 }
