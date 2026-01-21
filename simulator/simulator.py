@@ -174,8 +174,8 @@ def main():
 
                 game.move_player(player, player_move)
             game.print()
-            # sleep(0.5)
-            input("Press any key to continue...")
+            sleep(0.5)
+            # input("Press any key to continue...")
 
         print(f"Game over. Winner: {game.winner()}")
 

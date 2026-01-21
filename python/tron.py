@@ -357,15 +357,14 @@ def minmax(state, me, max_depth=600) -> int:
     on max node: if child.score > beta then beta = child.score 
     """
 
-    while nodes:
-        current_node : Node = nodes.get(False)
-        debug(f"Current node: {current_node.id()}")
 
-        if current_node.parent is None and current_node.visited:
+    while nodes:
+        current_node : Node = nodes.get()
+        if current_node is None:
             break
 
-
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
+        debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
 
         is_terminal_node = (
             (not moves and current_node.current_player == me) # my turn and no move = loss
@@ -390,7 +389,7 @@ def minmax(state, me, max_depth=600) -> int:
                 next_player = state_after_player_move.next_player(current_node.current_player)
                 child_node = Node(me, state_after_player_move, next_player, move, current_node.depth + 1)
                 child_node.parent = current_node
-                current_node.children.append(child_node)
+                current_node.add_child(child_node)
 
             nodes.put(current_node.next_child())
 
@@ -403,7 +402,7 @@ def minmax(state, me, max_depth=600) -> int:
             next_player = state_after_player_death.next_player(current_node.current_player)
             child_node = Node(me, state_after_player_death, next_player, D_DOWN, current_node.depth + 1)
             child_node.parent = current_node
-            current_node.children.append(child_node)
+            current_node.add_child(child_node)
 
             nodes.put(current_node.next_child())
 
@@ -449,10 +448,10 @@ def minmax(state, me, max_depth=600) -> int:
             else:
                 nodes.put(current_node.parent)
 
-    best_child_node = max(origin_node.children, key=lambda child: child.score)
+    best_child_node = max(origin_node.children, key=lambda child: child.score) if origin_node.children else None
     debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}")
 
-    return best_child_node.move # remove this
+    return best_child_node.move if best_child_node else D_DOWN
 
 def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
     # prendre en compte la mort 0 = mort
