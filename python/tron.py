@@ -306,7 +306,7 @@ class Node:
             return "#"
         else:
             move_short_name = direction_str(self.move)[0]
-            return f"{self.parent.id()}{self.parent.current_player}{'+' if self.max else '-'}{move_short_name}"
+            return f"{self.parent.id()}.{self.parent.current_player}{'+' if self.max else '-'}{move_short_name}"
 
     def is_max(self) -> bool:
         return self.max
@@ -358,7 +358,8 @@ def minmax(state, me, max_turn=600) -> int:
     """
 
     while nodes:
-        current_node = nodes.get(False)
+        current_node : Node = nodes.get(False)
+        debug(f"Current node: {current_node.id()}")
 
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
@@ -376,7 +377,7 @@ def minmax(state, me, max_turn=600) -> int:
 
         if not current_node.visited:
             current_node.visited = True
-            current_node.score = -MAX_SCORE if current_node.is_max(me) else MAX_SCORE
+            current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
             current_node.children = []
 
             for move in moves:
@@ -384,15 +385,16 @@ def minmax(state, me, max_turn=600) -> int:
                 # todo : next_player should be in state
                 next_player = state_after_player_move.next_player(current_node.current_player)
                 child_node = Node(me, state_after_player_move, next_player, move, current_node.depth + 1)
+                child_node.parent = current_node
                 current_node.children.append(child_node)
 
             nodes.put(current_node.next_child())
 
 
-        elif current_node.is_max(me):
-            last_solved_child = current_node.current_player
-            if last_solved_child > current_node.score:
-                current_node.score = last_solved_child
+        elif current_node.is_max():
+            last_solved_child = current_node.current_child()
+            if last_solved_child.score > current_node.score:
+                current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
 
             if last_solved_child.score > beta:
@@ -409,9 +411,9 @@ def minmax(state, me, max_turn=600) -> int:
                 nodes.put(current_node.parent)
 
         else: # min
-            last_solved_child = current_node.current_player
-            if last_solved_child < current_node.score:
-                current_node.score = last_solved_child
+            last_solved_child = current_node.current_child()
+            if last_solved_child.score < current_node.score:
+                current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
 
             if last_solved_child.score < alpha:
@@ -530,7 +532,8 @@ def game_loop():
         timer.reset()
         #state.print(LOG_INFO)
         # (24,16)(6,6)(29,5)
-        direction = choose_minmax_one(me, state)
+        # direction = choose_minmax_one(me, state)
+        direction = minmax(state, me)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
