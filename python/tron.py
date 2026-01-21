@@ -1,4 +1,3 @@
-import queue
 import sys
 import time
 from functools import reduce, total_ordering
@@ -342,9 +341,6 @@ def minmax(state, me, max_depth=600) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
 
-    nodes = queue.PriorityQueue()
-    nodes.put(origin_node)
-
     alpha = 0
     """
     on max node: if child.score > alpha then exit without visiting others children\n
@@ -358,8 +354,8 @@ def minmax(state, me, max_depth=600) -> int:
     """
 
 
-    while nodes:
-        current_node : Node = nodes.get()
+    current_node = origin_node
+    while True:
         if current_node is None:
             break
 
@@ -367,16 +363,16 @@ def minmax(state, me, max_depth=600) -> int:
         debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
 
         is_terminal_node = (
-            (not moves and current_node.current_player == me) # my turn and no move = loss
-            or (current_node.state.get_winner() == me) # I won
-            or (current_node.current_player == me and current_node.depth > max_depth)
+                (not moves and current_node.current_player == me) # my turn and no move = loss
+                or (current_node.state.get_winner() == me) # I won
+                or (current_node.current_player == me and current_node.depth > max_depth)
             # limit depth by depth or by time
         )
 
         if is_terminal_node:
             current_node.score += evaluate_for_player(current_node.state, me)
             current_node.visited = True
-            nodes.put(current_node.parent)
+            current_node = current_node.parent
 
         elif not current_node.visited and moves:
             current_node.visited = True
@@ -391,7 +387,7 @@ def minmax(state, me, max_depth=600) -> int:
                 child_node.parent = current_node
                 current_node.add_child(child_node)
 
-            nodes.put(current_node.next_child())
+            current_node = current_node.current_child()
 
         elif not current_node.visited and not moves and current_node.current_player != me:
             current_node.visited = True
@@ -404,8 +400,7 @@ def minmax(state, me, max_depth=600) -> int:
             child_node.parent = current_node
             current_node.add_child(child_node)
 
-            nodes.put(current_node.next_child())
-
+            current_node = child_node
 
         elif current_node.is_max():
             last_solved_child = current_node.current_child()
@@ -423,9 +418,9 @@ def minmax(state, me, max_depth=600) -> int:
 
             next_child = current_node.next_child()
             if next_child is not None:
-                nodes.put(next_child)
+                current_node = next_child
             else:
-                nodes.put(current_node.parent)
+                current_node = current_node.parent
 
         else: # min
             last_solved_child = current_node.current_child()
@@ -444,14 +439,16 @@ def minmax(state, me, max_depth=600) -> int:
 
             next_child = current_node.next_child()
             if next_child is not None:
-                nodes.put(next_child)
+                current_node = next_child
             else:
-                nodes.put(current_node.parent)
+                current_node = current_node.parent
 
-    best_child_node = max(origin_node.children, key=lambda child: child.score) if origin_node.children else None
-    debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}")
-
-    return best_child_node.move if best_child_node else D_DOWN
+    if origin_node.children:
+        best_child_node = max(origin_node.children, key=lambda child: child.score)
+        debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}")
+        return best_child_node.move
+    else:
+        return D_DOWN
 
 def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
     # prendre en compte la mort 0 = mort
@@ -552,7 +549,7 @@ def game_loop():
         #state.print(LOG_INFO)
         # (24,16)(6,6)(29,5)
         # direction = choose_minmax_one(me, state)
-        direction = minmax(state, me, max_depth=10)
+        direction = minmax(state, me, max_depth=4)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
