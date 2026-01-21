@@ -9,8 +9,6 @@ LOG_INFO = 1
 LOG_WARN = 2
 LOG_ERROR = 3
 
-LOG_THRESHOLD = LOG_DEBUG
-
 HEIGHT = 20
 WIDTH = 30
 MAX_CELL = HEIGHT * WIDTH
@@ -21,12 +19,6 @@ D_UP = -WIDTH
 D_DOWN = +WIDTH
 D_LEFT = -1
 D_RIGHT = +1
-
-# config
-DEPTH = 10
-MAX_TIME_RATIO = 0.95
-MAX_ACCESSIBLE_COUNT = 50
-ERROR_SCORE = -999999
 
 def debug(log, level=LOG_DEBUG):
     if level >= LOG_THRESHOLD:
@@ -337,7 +329,7 @@ class Node:
         return self.depth == other.depth
 
 
-def minmax(state, me, max_depth=600) -> int:
+def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
 
@@ -362,10 +354,13 @@ def minmax(state, me, max_depth=600) -> int:
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
         debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
 
+        depth_limit_reached = (current_node.depth >= max_depth
+                               or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()))
+
         is_terminal_node = (
                 (not moves and current_node.current_player == me) # my turn and no move = loss
                 or (current_node.state.get_winner() == me) # I won
-                or (current_node.current_player == me and current_node.depth > max_depth)
+                or (current_node.current_player == me and depth_limit_reached)
             # limit depth by depth or by time
         )
 
@@ -445,9 +440,10 @@ def minmax(state, me, max_depth=600) -> int:
 
     if origin_node.children:
         best_child_node = max(origin_node.children, key=lambda child: child.score)
-        debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}")
+        debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}", LOG_INFO)
         return best_child_node.move
     else:
+        debug("No possible moves, going down both figuratively and literally.", LOG_ERROR)
         return D_DOWN
 
 def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
@@ -547,13 +543,19 @@ def game_loop():
 
         timer.reset()
         #state.print(LOG_INFO)
-        # (24,16)(6,6)(29,5)
+        # (12,5)(1,5)
         # direction = choose_minmax_one(me, state)
-        direction = minmax(state, me, max_depth=4)
+        direction = minmax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
         print_direction(direction)
 
+# config
+LOG_THRESHOLD = LOG_INFO
+MAX_DEPTH = 10
+MAX_TIME_RATIO = 0.75
+MAX_ACCESSIBLE_COUNT = 50
+ERROR_SCORE = -999999
 
 game_loop()

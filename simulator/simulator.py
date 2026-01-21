@@ -1,3 +1,5 @@
+import json
+import random
 import sys
 import traceback
 from subprocess import Popen, PIPE
@@ -40,6 +42,7 @@ class Game:
 
     nb_players: int
     grid: Grid
+    initial_coords: list[tuple[int, int]]
     heads: list[tuple[int, int]]
     moves = {
         "UP": (0, -1),
@@ -51,8 +54,9 @@ class Game:
     def __init__(self, initial_coords: list[tuple[int, int]]):
         self.nb_players = len(initial_coords)
         self.grid = Grid(WIDTH, HEIGHT)
+        self.initial_coords = initial_coords
         self.heads = [(0, 0)]*self.nb_players
-        for (p, (x, y)) in enumerate(initial_coords):
+        for (p, (x, y)) in enumerate(self.initial_coords):
             self.grid.set(x, y, p)
             self.heads[p] = (x, y)
 
@@ -66,7 +70,14 @@ class Game:
         else:
             print(f'Invalid move: {move} : killing {player}')
             self.heads[player] = (-1, -1)
+            for y in range(self.grid.height):
+                for x in range(self.grid.width):
+                    if self.grid.get(x,y) == player:
+                        self.grid.set(x, y, -1)
             return False
+
+    def get_initial_coords(self, player):
+        return self.initial_coords[player] if not self.is_dead(player) else (-1, -1)
 
     def get_head(self, player) -> tuple[int, int]:
         return self.heads[player]
@@ -100,14 +111,16 @@ class AI:
     stderr: fdpexpect.fdspawn
     stdin: fdpexpect.fdspawn
 
+    initial_coords: tuple[int, int]
     running: bool
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, initial_coords: tuple[int, int]):
         self.path = path
         self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE)
         self.running = True
         self.stdout = fdpexpect.fdspawn(self.process.stdout)
         self.stdin = fdpexpect.fdspawn(self.process.stdin)
+        self.initial_coords = initial_coords
 
     def write_settings(self, nb_players, player_id):
         print(f"Game settings input: {nb_players} {player_id}")
@@ -121,7 +134,7 @@ class AI:
 
     def read_move(self):
         moves = ['UP', 'DOWN', 'LEFT', 'RIGHT']
-        index = self.stdout.expect(moves)
+        index = self.stdout.expect(moves, timeout=None)
         return moves[index]
 
     def stop(self):
@@ -130,26 +143,67 @@ class AI:
         self.process.kill()
         self.running = False
 
+class Config:
+    ais: list[AiConfig] = []
+    nb_players: int
+
+    def __init__(self, config: dict) -> None:
+        self.ais = [ AiConfig(ai) for ai in config.get('ais', [])]
+        self.nb_players = len(self.ais)
+
+    def __str__(self):
+        return json.dumps(self, default=lambda o: o.__dict__, indent=4)
+
+class AiConfig:
+    program_path: str
+    initial_coords: tuple[int, int]
+
+    def __init__(self, config: dict) -> None:
+        self.program_path = config['program_path']
+        if not self.program_path:
+            raise Exception(f"Invalid program_path: {config['program_path']}")
+        self.initial_coords = config.get('initial_coords', (int(random.random()*WIDTH), int(random.random()*HEIGHT)))
+
+    def __str__(self):
+        return json.dumps(self, default=lambda o: o.__dict__, indent=4)
+
 
 def main():
 
     ais : list[AI] = []
 
     try:
-        programs_paths = sys.argv[1:]
+        args = sys.argv[1:]
 
-        initial_coords = [
-            (4, 4),
-            (4, 14),
-            (24, 4),
-            (24, 14)
-        ]
+        config = Config({
+            "ais": [
+                {
+                    "program_path": "./mockai.py",
+                },
+                {
+                    "program_path": "./mockai.py",
+                },
+                {
+                    "program_path": "./mockai.py",
+                },
+                {
+                    "program_path": "./mockai.py",
+                }
+            ]
+        })
+        if len(args)>0:
+            config_file_path = args[0]
+            with open(config_file_path, 'r') as config_file:
+                json_config = json.load(config_file)
+                config = Config(json_config)
 
-        for (player, program_path) in enumerate(programs_paths):
-            print(program_path)
-            ais.append(AI(program_path))
+        print(f"Config: {config}")
 
-        game = Game(initial_coords[0:len(ais)])
+        for (player, ai_config) in enumerate(config.ais):
+            print(ai_config.program_path)
+            ais.append(AI(ai_config.program_path, ai_config.initial_coords))
+
+        game = Game([ai.initial_coords for ai in ais])
         game.print()
 
         while game.winner() == -1:
@@ -166,7 +220,7 @@ def main():
 
                 for p in range(game.nb_players):
                     (x1, y1) = game.get_head(p)
-                    (x0, y0) = initial_coords[p] if not game.is_dead(p) else (-1, -1)
+                    (x0, y0) = game.get_initial_coords(p)
                     ais[player].write_player_info(p, x0, y0, x1, y1)
 
                 player_move = ais[player].read_move()

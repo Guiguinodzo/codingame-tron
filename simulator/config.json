@@ -1,0 +1,19 @@
+{
+  "ais": [
+    {
+      "program_path": "../python/tron.py",
+      "initial_coords": [
+        12,
+        5
+      ]
+    },
+    {
+      "program_path": "../python/jb.py",
+      "initial_coords": [
+        1,
+        5
+      ]
+    }
+  ],
+  "nb_players": 2
+}

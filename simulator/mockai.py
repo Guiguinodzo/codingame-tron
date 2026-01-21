@@ -1,3 +1,4 @@
+import random
 import sys
 
 def debug(log):
@@ -19,5 +20,5 @@ while True:
         x0, y0, x1, y1 = [int(j) for j in input().split()]
         debug(f"p{player} : x0, y0, x1, y1: {x0, y0, x1, y1}")
 
-    print(['UP','DOWN','LEFT','RIGHT'][turn % 4])
+    print(['UP','DOWN','LEFT','RIGHT'][int(random.random() * 4)])
     turn += 1

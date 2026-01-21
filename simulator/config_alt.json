@@ -1,0 +1,10 @@
+{
+  "ais": [
+    {
+      "program_path": "../python/jb.py"
+    },
+    {
+      "program_path": "../python/tron.py"
+    }
+  ]
+}
