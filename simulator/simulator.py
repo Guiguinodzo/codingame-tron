@@ -1,11 +1,11 @@
 import sys
 import traceback
-from operator import truediv
+from subprocess import Popen, PIPE
+from time import sleep
 
-import pexpect
+from pexpect import fdpexpect
 
 HEIGHT = 20
-
 WIDTH = 30
 
 
@@ -36,7 +36,6 @@ class Grid:
                     self.data[x][y] = new_value
 
 
-
 class Game:
 
     nb_players: int
@@ -48,7 +47,6 @@ class Game:
         "LEFT": (-1, 0),
         "RIGHT": (1, 0)
     }
-
 
     def __init__(self, initial_coords: list[tuple[int, int]]):
         self.nb_players = len(initial_coords)
@@ -95,9 +93,48 @@ class Game:
                 line += cell_str
             print(line)
 
+class AI:
+    path: str
+    process: Popen
+    stdout: fdpexpect.fdspawn
+    stderr: fdpexpect.fdspawn
+    stdin: fdpexpect.fdspawn
+
+    running: bool
+
+    def __init__(self, path: str):
+        self.path = path
+        self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE)
+        self.running = True
+        self.stdout = fdpexpect.fdspawn(self.process.stdout)
+        self.stdin = fdpexpect.fdspawn(self.process.stdin)
+
+    def write_settings(self, nb_players, player_id):
+        print(f"Game settings input: {nb_players} {player_id}")
+        self.stdin.write(f"{nb_players} {player_id}\n")
+        self.stdin.flush()
+
+    def write_player_info(self, p, x0, y0, x1, y1):
+        print(f"Input for p={p} : {x0} {y0} {x1} {y1}")
+        self.stdin.write(f"{x0} {y0} {x1} {y1}\n")
+        self.stdin.flush()
+
+    def read_move(self):
+        moves = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+        index = self.stdout.expect(moves)
+        return moves[index]
+
+    def stop(self):
+        if not self.running:
+            return
+        self.process.kill()
+        self.running = False
 
 
 def main():
+
+    ais : list[AI] = []
+
     try:
         programs_paths = sys.argv[1:]
 
@@ -108,15 +145,13 @@ def main():
             (24, 14)
         ]
 
-        ais = []
         for (player, program_path) in enumerate(programs_paths):
             print(program_path)
-            ais.append(pexpect.spawn(f"python {program_path}"))
+            ais.append(AI(program_path))
 
         game = Game(initial_coords[0:len(ais)])
         game.print()
 
-        moves = ['UP', 'DOWN', 'LEFT', 'RIGHT']
         while game.winner() == -1:
             for player in range(game.nb_players):
                 if game.winner() != -1:
@@ -124,31 +159,33 @@ def main():
 
                 if game.is_dead(player):
                     print(f'Player {player} is dead')
+                    ais[player].stop()
                     continue
 
-                game_settings_input = f"{game.nb_players} {player}"
-                ais[player].sendline(game_settings_input)
-                print(f"Game settings input: {game_settings_input}")
+                ais[player].write_settings(game.nb_players, player)
+
                 for p in range(game.nb_players):
                     (x1, y1) = game.get_head(p)
                     (x0, y0) = initial_coords[p] if not game.is_dead(p) else (-1, -1)
-                    p_input = f"{x0} {y0} {x1} {y1}"
-                    ais[player].sendline(p_input)
-                    print(f"Input for p={p} : {p_input}")
+                    ais[player].write_player_info(p, x0, y0, x1, y1)
 
-                move_index = ais[player].expect([m[0] for m in moves])
-
-                player_move = moves[move_index]
+                player_move = ais[player].read_move()
                 print(f'Move for player {player} : {player_move}')
+
                 game.move_player(player, player_move)
             game.print()
-            input("Press Enter to continue...")
+            # sleep(0.5)
+            input("Press any key to continue...")
 
         print(f"Game over. Winner: {game.winner()}")
 
     except Exception:
         print(traceback.format_exc())
         sys.exit(1)
+    finally:
+        if ais:
+            for ai in ais:
+                ai.stop()
 
 
 if __name__ == "__main__":

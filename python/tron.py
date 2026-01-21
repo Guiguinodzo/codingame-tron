@@ -3,6 +3,7 @@ import sys
 import time
 from functools import reduce, total_ordering
 from operator import itemgetter
+from typing import Self
 
 LOG_DEBUG = 0
 LOG_INFO = 1
@@ -276,8 +277,8 @@ class Node:
     beta: int
     """ on min node, is the min score. on max node, is the cutoff if score >= beta """
 
-    parent: Node
-    children: list[Node]
+    parent: Self
+    children: list[Self]
 
     def __init__(self, state: State, current_player: int, depth: int, parent=None):
         self.state = state
@@ -294,7 +295,7 @@ class Node:
     def is_max(self, me: int) -> bool:
         return self.current_player == me
 
-    def add_child(self, node: Node):
+    def add_child(self, node: Self):
         self.children.append(node)
 
     # order is depth descending = lower (bigger) depth first
