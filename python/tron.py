@@ -384,14 +384,18 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
                 current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
 
-            if last_solved_child.score > beta:
-                debug(f"{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
-                beta = last_solved_child.score
+            if last_solved_child.score >= beta:
+                # this node score is already better than the worst score on the above min step, so it's wont be kept
+                debug(f"{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
+                current_node = current_node.parent
+                continue
 
             if last_solved_child.score > alpha:
-                debug(f"{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
+                debug(f"{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
+                alpha = last_solved_child.score
 
             next_child = current_node.next_child()
+
             if next_child is not None:
                 current_node = next_child
             else:
@@ -399,18 +403,22 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
         else: # min
             last_solved_child = current_node.current_child()
+
             if last_solved_child is None:
                 debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
             if last_solved_child.score < current_node.score:
                 current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
 
-            if last_solved_child.score < alpha:
-                debug(f"{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
-                alpha = last_solved_child.score
+            if last_solved_child.score <= alpha:
+                # this node score is already worse than the best score on the above max step, so it's wont be kept
+                debug(f"{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
+                current_node = current_node.parent
+                continue
 
             if last_solved_child.score < beta:
-                debug(f"{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
+                debug(f"{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
+                beta = last_solved_child.score
 
             next_child = current_node.next_child()
             if next_child is not None:
