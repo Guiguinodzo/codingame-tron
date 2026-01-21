@@ -1,7 +1,8 @@
+import queue
 import sys
-from operator import itemgetter
 import time
-from functools import reduce
+from functools import reduce, total_ordering
+from operator import itemgetter
 
 LOG_DEBUG = 0
 LOG_INFO = 1
@@ -138,6 +139,17 @@ class State:
         alive_players = self.get_alive_players()
         return alive_players[0] if len(alive_players) == 1 else -1
 
+    def next_player(self, current_player):
+        next_player = (current_player + 1) % self.nb_players
+        while not self.is_player_alive(next_player) and next_player != current_player:
+            next_player = (next_player + 1) % self.nb_players
+
+        if next_player == current_player:
+            raise Exception(f"Player {current_player} wins!")
+
+        return next_player
+
+
     def print(self, log_level=LOG_DEBUG):
         header = "_| " + " ".join([str(i % 10) for i in range(WIDTH)])
         debug(header, log_level)
@@ -248,6 +260,124 @@ def insert_sorted_desc_from_end(input_list, element, comparison_key_extractor):
     # index = -1 or input[index] >= element_key
     input_list.insert(index + 1, element)
 
+@total_ordering
+class Node:
+    state: State
+    current_player: int
+
+    depth: int
+
+    visited: bool
+    solved: bool
+    score: int
+
+    alpha: int
+    """ on max node, is the max score. on min node, is the cutoff if score <= alpha """
+    beta: int
+    """ on min node, is the min score. on max node, is the cutoff if score >= beta """
+
+    parent: Node
+    children: list[Node]
+
+    def __init__(self, state: State, current_player: int, depth: int, parent=None):
+        self.state = state
+        self.current_player = current_player
+        self.depth = depth
+        self.visited = False
+        self.solved = False
+        self.score = 0
+        self.alpha = -MAX_SCORE
+        self.beta = MAX_SCORE
+        self.parent = parent
+        self.children = []
+
+    def is_max(self, me: int) -> bool:
+        return self.current_player == me
+
+    def add_child(self, node: Node):
+        self.children.append(node)
+
+    # order is depth descending = lower (bigger) depth first
+    def __lt__(self, other):
+        return self.depth > other.depth
+
+    def __gt__(self, other):
+        return self.depth > other.depth
+
+    def __le__(self, other):
+        return self.depth >= other.depth
+
+    def __ge__(self, other):
+        return self.depth <= other.depth
+
+    def __eq__(self, other):
+        return self.depth == other.depth
+
+
+def minmax(state, me, max_depth=600) -> int:
+
+    origin_node = Node(state, me, 0)
+
+    nodes = queue.PriorityQueue()
+    nodes.put(origin_node)
+
+    current_node = None
+    while nodes:
+        node = nodes.pop()
+
+        is_terminal_node = node.depth == 0
+
+        if is_terminal_node:
+            node.score += evaluate_for_player(node.state, me)
+            node.solved = True
+            nodes.put(node.parent)
+
+        elif node.is_max(me):
+            if not node.visited:
+                node.visited = True
+                node.score = -MAX_SCORE
+                node.children = []
+
+                moves = node.state.get_valid_moves_for_player(node.current_player)
+                for move in moves:
+                    state_after_player_move = node.state.with_player_move(node.current_player, move)
+                    next_player = state_after_player_move.next_player(node.current_player)
+                    child_node = Node(state_after_player_move, next_player, node.depth + 1)
+                    node.children.append(child_node)
+                    nodes.put(child_node)
+
+            else:
+                max_child = max(node.children, key=lambda x: x.score)
+
+                node.score = max_child.score
+                node.solved = True
+
+                nodes.put(node.parent)
+
+        else: # min
+            if not node.visited: # copie de max sauf score init qui sert pas forcément
+                node.visited = True
+                node.score = MAX_SCORE
+                node.children = []
+
+                moves = node.state.get_valid_moves_for_player(node.current_player)
+                for move in moves:
+                    state_after_player_move = node.state.with_player_move(node.current_player, move)
+                    next_player = state_after_player_move.next_player(node.current_player)
+                    child_node = Node(state_after_player_move, next_player, node.depth + 1)
+                    node.children.append(child_node)
+                    nodes.put(child_node)
+
+            else:
+                min_child = min(node.children, key=lambda x: x.score)
+
+                node.score = min_child.score
+                node.solved = True
+
+                nodes.put(node.parent)
+
+    return 0 # remove this
+
 
 def minmax_iterative(player, state, depth=0) -> int:
     leafs = []
@@ -289,7 +419,7 @@ def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
     # appliquer exponentielle ou logarithme
 
     if state.get_winner() == me:
-        return WIDTH*HEIGHT
+        return MAX_SCORE
 
     voronois = voronoi(state)
 
@@ -303,28 +433,6 @@ def evaluate_for_player(state, me, coeff=1, depth=0) -> int:
 
     return score
 
-
-def count_accessible(state: State, origin) -> int:
-    counting_state = state.copy()
-    debug(f"count_accessible from {origin} / {cell_to_xy(origin)}", LOG_INFO)
-    counting_state.print(LOG_INFO)
-
-    remaining = counting_state.get_valid_adjacent(origin)
-    count = 0
-    while bool(remaining) and count < MAX_ACCESSIBLE_COUNT:  # == is not empty
-        current = remaining.pop()
-        try:
-            if counting_state.is_free(current):
-                count += 1
-                counting_state.set_cell(current, 9)
-                for adjacent in counting_state.get_valid_adjacent(current):
-                    remaining.append(adjacent)
-            else:
-                debug(f"not free: {current} {cell_to_xy(current)}", LOG_INFO)
-        except IndexError:
-            debug(f"IndexError: origin={origin} current={current}", LOG_ERROR)
-            counting_state.print(LOG_INFO)
-    return count
 
 def voronoi(state: State) -> list[int]:
     """returns an array so that voronoi[player]=nb of cell player is the nearest of"""
