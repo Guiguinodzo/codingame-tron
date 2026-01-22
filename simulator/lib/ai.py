@@ -1,12 +1,10 @@
-import sys
 import time
 from subprocess import Popen, PIPE
 
 from pexpect import fdpexpect
 
+from lib.logger import Logger
 
-def log(*args):
-    print(*args, file=sys.stderr)
 
 class AI:
     path: str
@@ -18,11 +16,12 @@ class AI:
     player_id: int
     running: bool
 
-    def __init__(self, path: str, initial_coords: tuple[int, int]):
+    def __init__(self, path: str, initial_coords: tuple[int, int], log_directory: str, logger: Logger):
+        self.logger = logger
         self.path = path
         self.initial_coords = initial_coords
 
-        self.log_filename = f'{self.get_name()}_{time.strftime("%Y%m%d-%H%M%S")}.log'
+        self.log_filename = f'{log_directory}/{self.get_name()}_{time.strftime("%Y%m%d-%H%M%S")}.log'
         self.log_file = open(self.log_filename, 'wb')
 
         self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE, stderr=self.log_file)
@@ -32,13 +31,13 @@ class AI:
         self.running = True
 
     def write_settings(self, nb_players, player_id):
-        log(f"Game settings input: {nb_players} {player_id}")
+        self.logger.log(f"Game settings input: {nb_players} {player_id}")
         self.player_id = player_id
         self.stdin.write(f"{nb_players} {player_id}\n")
         self.stdin.flush()
 
     def write_player_info(self, p, x0, y0, x1, y1):
-        log(f"Input for p={p} : {x0} {y0} {x1} {y1}")
+        self.logger.log(f"Input for p={p} : {x0} {y0} {x1} {y1}")
         self.stdin.write(f"{x0} {y0} {x1} {y1}\n")
         self.stdin.flush()
 

@@ -1,13 +1,9 @@
-import sys
-
 from lib.display import Display
 from lib.grid import Grid
+from lib.logger import Logger
 
 HEIGHT = 20
 WIDTH = 30
-
-def log(*args):
-    print(*args, file=sys.stderr)
 
 class Game:
     nb_players: int
@@ -21,7 +17,8 @@ class Game:
         "RIGHT": (1, 0)
     }
 
-    def __init__(self, initial_coords: list[tuple[int, int]]):
+    def __init__(self, initial_coords: list[tuple[int, int]], logger: Logger):
+        self.logger = logger
         self.nb_players = len(initial_coords)
         self.grid = Grid(WIDTH, HEIGHT)
         self.initial_coords = initial_coords
@@ -38,7 +35,7 @@ class Game:
             self.heads[player] = (x + dx, y + dy)
             return True
         else:
-            log(f'Invalid move: {move} : killing {player}')
+            self.logger.log(f'Invalid move: {move} : killing {player}')
             self.heads[player] = (-1, -1)
             self.grid.replace(player, -1)
             return False
@@ -58,7 +55,7 @@ class Game:
 
     def print(self):
         header = "_| " + " ".join([str(i % 10) for i in range(self.grid.width)])
-        log(header)
+        self.logger.log(header)
         for y in range(self.grid.height):
             line = f"{y % 10}|"
             for x in range(self.grid.width):
@@ -69,7 +66,7 @@ class Game:
                         (str(value) if value >= 0 else '.')
                 )
                 line += cell_str
-            log(line)
+            self.logger.log(line)
 
     def print_in_display(self, display: Display):
         for y in range(self.grid.height):
