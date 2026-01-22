@@ -1,8 +1,9 @@
 import sys
+import time
 from subprocess import Popen, PIPE
-from typing import TextIO
 
 from pexpect import fdpexpect
+
 
 def log(*args):
     print(*args, file=sys.stderr)
@@ -12,25 +13,27 @@ class AI:
     process: Popen
     stdout: fdpexpect.fdspawn
     stdin: fdpexpect.fdspawn
-    fifo_name: str
-    fifo: TextIO
 
     initial_coords: tuple[int, int]
+    player_id: int
     running: bool
 
     def __init__(self, path: str, initial_coords: tuple[int, int]):
         self.path = path
         self.initial_coords = initial_coords
 
-        self.fifo_name = f'fifo{self.initial_coords[0] * 100 + self.initial_coords[1]:04d}'
-        self.fifo = open(self.fifo_name, 'w')
-        self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE, stderr=self.fifo)
-        self.running = True
+        self.log_filename = f'{self.get_name()}_{time.strftime("%Y%m%d-%H%M%S")}.log'
+        self.log_file = open(self.log_filename, 'wb')
+
+        self.process = Popen(['python', path], stdout=PIPE, stdin=PIPE, stderr=self.log_file)
         self.stdout = fdpexpect.fdspawn(self.process.stdout)
         self.stdin = fdpexpect.fdspawn(self.process.stdin)
 
+        self.running = True
+
     def write_settings(self, nb_players, player_id):
         log(f"Game settings input: {nb_players} {player_id}")
+        self.player_id = player_id
         self.stdin.write(f"{nb_players} {player_id}\n")
         self.stdin.flush()
 
@@ -48,4 +51,9 @@ class AI:
         if not self.running:
             return
         self.process.kill()
+        self.process.wait()
+        self.log_file.close()
         self.running = False
+
+    def get_name(self):
+        return f"{self.path.split('/')[-1].split('.')[0]}_{self.initial_coords[0]:02d}_{self.initial_coords[1]:02d}"

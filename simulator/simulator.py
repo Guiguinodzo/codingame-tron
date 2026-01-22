@@ -95,10 +95,13 @@ def main(stdscr = None):
             # sleep(0.1)
             # display.wait_for_key()
 
-            game.print()
+            # game.print()
 
         log(f"Game over. Winner: {game.winner()}")
 
+        # for ai in ais:
+        #     ai.write_logs()
+        #
         # sys.stderr = sys.__stderr__
 
         for line in output_wrapper.get_text():
