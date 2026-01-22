@@ -1,7 +1,6 @@
 import curses
 import random
 from curses import wrapper
-from typing import Any
 
 MARGIN_LEFT = 10
 MARGIN_TOP = 10
@@ -19,16 +18,11 @@ WIDTH = 30
 HEIGHT = 20
 
 
-
-
 class Display:
-
     pairs: dict[int, int] = {}
 
-    def __init__(self, stdscr, margin_top=MARGIN_TOP, margin_left=MARGIN_LEFT):
+    def __init__(self, stdscr):
         self.stdscr = stdscr
-        self.margin_top = margin_top
-        self.margin_left = margin_left
 
         self.define_pair(1, curses.COLOR_BLACK, curses.COLOR_RED)
         self.define_pair(2, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
@@ -38,27 +32,28 @@ class Display:
     def clear(self):
         self.stdscr.clear()
 
-    def draw_frame(self, width, height):
-        x_abscissa = "".join([str(i % 10) for i in range(width)])
-        self.stdscr.addstr(self.margin_top - 2, self.margin_left, x_abscissa)
-        for i in range(height):
-            self.stdscr.addstr(self.margin_top + i, self.margin_left - 2, str(i % 10))
+    def draw_frame(self, margin_left, margin_top, width, height, with_indexes=False):
+        if with_indexes:
+            x_abscissa = "".join([str(i % 10) for i in range(width)])
+            self.stdscr.addstr(margin_top - 2, margin_left, x_abscissa)
+            for i in range(height):
+                self.stdscr.addstr(margin_top + i, margin_left - 2, str(i % 10))
 
         line_with_border = BORDER_VERTICAL + (" " * width) + BORDER_VERTICAL
         top_border = CORNER_TOP_LEFT + (BORDER_HORIZONTAL * width) + CORNER_TOP_RIGHT
         bottom_border = CORNER_BOTTOM_LEFT + (BORDER_HORIZONTAL * width) + CORNER_BOTTOM_RIGHT
 
-        self.stdscr.addstr(self.margin_top - 1, self.margin_left - 1, top_border)
+        self.stdscr.addstr(margin_top - 1, margin_left - 1, top_border)
         for y in range(height):
-            self.stdscr.addstr(self.margin_top + y, self.margin_left - 1, line_with_border)
-        self.stdscr.addstr(self.margin_top + height, self.margin_left - 1, bottom_border)
+            self.stdscr.addstr(margin_top + y, margin_left - 1, line_with_border)
+        self.stdscr.addstr(margin_top + height, margin_left - 1, bottom_border)
 
     def define_pair(self, i, fg, bg):
         curses.init_pair(i, fg, bg)
-        self.pairs[i-1] = curses.color_pair(i)
+        self.pairs[i - 1] = curses.color_pair(i)
 
-    def dot(self, x, y, color):
-        self.stdscr.addstr(self.margin_top + y, self.margin_left + x, str(color), self.pairs.get(color, 1))
+    def write(self, x, y, text, color=None):
+        self.stdscr.addstr(y, x, text, self.pairs.get(color, 1))
 
     def refresh(self):
         self.stdscr.refresh()
@@ -71,11 +66,17 @@ def main(stdscr):
     display = Display(stdscr)
 
     display.clear()
-    display.draw_frame(WIDTH, HEIGHT)
+    display.draw_frame(MARGIN_LEFT, MARGIN_TOP, WIDTH, HEIGHT)
     display.refresh()
 
     while stdscr.getch() != ord('q'):
-        display.dot(int(random.random() * WIDTH), int(random.random() * HEIGHT), int(random.random() * 4))
+        display.write(
+            MARGIN_LEFT + int(random.random() * WIDTH),
+            MARGIN_TOP + int(random.random() * HEIGHT),
+            str(int(random.random() * 4)),
+            int(random.random() * 4)
+        )
+        display.refresh()
 
 
 if __name__ == "__main__":
