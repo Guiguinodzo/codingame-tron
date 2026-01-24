@@ -1,6 +1,10 @@
+import os
+import platform
+import socket
 import sys
 import time
-from functools import reduce, total_ordering
+from collections import deque
+from functools import reduce
 from operator import itemgetter
 from typing import Self
 
@@ -241,7 +245,6 @@ def choose_minmax_one(me: int, state: State) -> int:
 
     return best_move
 
-
 def insert_sorted_desc_from_end(input_list, element, comparison_key_extractor):
     element_key = comparison_key_extractor(element)
     index = len(input_list) - 1
@@ -471,10 +474,11 @@ def voronoi(state: State) -> list[int]:
     voronoi_state = state.copy()
     timer.start_step("voronoi")
 
-    remaining = []
+    remaining = deque()
     for player, head in enumerate(state.heads):
         if head > -1:
-            remaining += [(player, adjacent) for adjacent in state.get_valid_adjacent(head)]
+            for (player, adjacent) in [(player, adjacent) for adjacent in state.get_valid_adjacent(head)]:
+                remaining.appendleft((player, adjacent))
 
     counters = [0]*state.nb_players
     while bool(remaining):  # == is not empty
@@ -483,10 +487,10 @@ def voronoi(state: State) -> list[int]:
             counters[player] += 1
             voronoi_state.set_cell(current, player + 4)
             for adjacent in voronoi_state.get_valid_adjacent(current):
-                remaining.insert(0, (player, adjacent))
+                remaining.appendleft((player, adjacent))
 
     debug(f"Voronoi took {timer.stop_step('voronoi') * 1000:.3f} ms")
-    # voronoi_state.print()
+    voronoi_state.print()
 
     return counters
 
@@ -504,15 +508,28 @@ def direction_str(direction):
         'ERROR'
     )
 
+def compute_free_space_per_user(me, turn, state):
+    nb_alive = state.get_nb_alive()
+    nb_moves = turn * nb_alive
+    for p in range(me):
+        if state.is_player_alive(p):
+            nb_moves += 1
+
+    return ((WIDTH*HEIGHT) - nb_moves) / nb_alive
+
+
 def game_loop():
 
     state = None
+    turn = 0
 
     while True:
         # n: total number of players (2 to 4).
         # p: your player number (0 to 3).
         nb_players, me = [int(i) for i in input().split()]
-        debug(f"I am p{me}")
+        if turn == 0:
+            debug(f"I am p{me}")
+        turn += 1
 
         if state is None:
             state = State(nb_players)
@@ -548,9 +565,23 @@ def game_loop():
 
 # config
 LOG_THRESHOLD = LOG_INFO
-MAX_DEPTH = 10
+
+hostname = socket.gethostname()
+debug(f"Sys: {os.name} Platform: {platform.system()} Release: {platform.release()} Python: {platform.python_version()} Hostname: {hostname}", LOG_INFO)
+
+on_codingame='codemachine' in hostname
+
+if not on_codingame:
+    debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
+    LOG_THRESHOLD=LOG_DEBUG
+else:
+    debug("On codingame, log lvl = INFO", LOG_INFO)
+
+# config
+MAX_DEPTH = 5
 MAX_TIME_RATIO = 0.05
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
+FREE_SPACE_PER_USER_THRESHOLD=80
 
 game_loop()
