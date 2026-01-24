@@ -1,6 +1,4 @@
 @echo off
 call venv\Scripts\activate
-cd ui_module
-python main.py
-
+python -m ui_module.main
 pause
