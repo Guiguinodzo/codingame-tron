@@ -269,20 +269,20 @@ class Node:
 
     visited: bool
     """ False the first time the node is visited, True afterwards """
-    score: int
+    score: list[int]
 
     parent: Self
     children: list[Self]
     children_index: int
 
-    def __init__(self, me, state: State, current_player: int, move: int, depth: int, parent=None):
+    def __init__(self, state: State, current_player: int, move: int, depth: int, turn=0, parent=None):
         self.state = state
+        self.turn = turn
         self.current_player = current_player
         self.move = move
-        self.max = current_player == me
         self.depth = depth
         self.visited = False
-        self.score = -MAX_SCORE if me == current_player else -MAX_SCORE
+        self.score = []
         self.parent = parent
         self.children = []
         self.children_index = 0
@@ -294,16 +294,14 @@ class Node:
             then player 0 (min) moved Left and then player 1 (min) moved Up
         """
         if self.parent is None:
-            return "#"
+            return f"#{self.turn}"
         else:
             move_short_name = direction_str(self.move)[0]
-            return f"{self.parent.id()}.{self.parent.current_player}{'+' if self.max else '-'}{move_short_name}"
+            return f"{self.parent.id()}.{self.parent.current_player}{move_short_name}"
 
-    def is_max(self) -> bool:
-        return self.max
-
-    def add_child(self, node: Self):
-        self.children.append(node)
+    def add_child(self, child: Self):
+        child.parent = self
+        self.children.append(child)
 
     def current_child(self) -> Self:
         return self.children[self.children_index] if self.children_index < len(self.children) else None
@@ -312,139 +310,125 @@ class Node:
         self.children_index += 1
         return self.children[self.children_index] if self.children_index < len(self.children) else None
 
-def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
+def deep_voronoi(state, me, max_depth=600, max_elapsed_time_ratio = 0.0, turn=0) -> int:
 
-    origin_node = Node(me, state, me, 0, 0)
-
-    alpha = -MAX_SCORE
-    """
-    on max node: if child.score > alpha then exit without visiting others children\n
-    on min node: if child.score < alpha then alpha = child.score 
-    """
-
-    beta = MAX_SCORE
-    """
-    on min node: if child.score < beta then exit without visiting others children\n
-    on max node: if child.score > beta then beta = child.score 
-    """
+    origin_node = Node(state, me, 0, 0, turn)
 
     nb_visited = 0
     nb_terminal_visited = 0
     max_depth_reached = 0
 
-    current_node = origin_node
-    while True:
+    score_str = lambda score, player: [f"{s}{'*' if player == p else ''}" for p, s in enumerate(score)]
+
+    nodes=deque()
+    nodes.appendleft(origin_node)
+
+    final_depth = -1
+
+    while nodes:
+        current_node = nodes.pop()
         if current_node is None:
             break
+
+        indent="  "*current_node.depth
 
         nb_visited += 1
         if current_node.depth >= max_depth_reached:
             max_depth_reached = current_node.depth
 
-        moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
-        debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
+        current_player = current_node.current_player
 
-        depth_limit_reached = (current_node.depth >= max_depth
-                               or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()))
+        moves = current_node.state.get_valid_moves_for_player(current_player)
+        debug(f"{indent}Current node: {current_node.id()} (p={current_player}) with moves: {[direction_str(move) for move in moves]}")
+
+        if ( current_node.depth >= max_depth or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()) ) and final_depth < 0:
+            final_depth = current_node.depth + 1
+            debug(f"{indent}Final depth determined at node: {current_node.id()} (p={current_player}) : {final_depth}")
+
 
         is_terminal_node = (
-                (not moves and current_node.current_player == me) # my turn and no move = loss
-                or (current_node.state.get_winner() == me) # I won
-                or (current_node.current_player == me and depth_limit_reached)
-            # limit depth by depth or by time
+                (not moves and current_player == me)  # my turn and no move = loss
+                or (current_node.state.get_winner() == me)  # I won
+                or final_depth == current_node.depth
         )
 
         if is_terminal_node:
-            current_node.score = evaluate_for_player(current_node.state, me)
+            current_node.score = voronoi(current_node.state)
             current_node.visited = True
-            current_node = current_node.parent
+            debug(f"{indent}Terminal node: {current_node.id()} (p={current_player}) score = {score_str(current_node.score, current_player)}")
             nb_terminal_visited += 1
 
+            if current_node.parent is None:
+                debug(f"{indent}Original node and terminal : {current_node.id()} (p={current_player}).", LOG_ERROR)
+                break
+
+            if not nodes:
+                # last and only 1st lvl node and terminal = we should have won
+                nodes.appendleft(current_node.parent)
+
+            last_node_added = nodes.popleft()
+            nodes.appendleft(last_node_added)
+            if last_node_added.id() != current_node.parent.id():
+                nodes.appendleft(current_node.parent)
+
+
         elif not current_node.visited and moves:
+            debug(f"{indent}First visit of node: {current_node.id()} (p={current_player}) with moves: {[direction_str(move) for move in moves]}")
             current_node.visited = True
-            current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
-            current_node.children = []
+            current_node.score = [-MAX_SCORE] * state.nb_players
 
             for move in moves:
-                state_after_player_move = current_node.state.with_player_move(current_node.current_player, move)
+                state_after_player_move = current_node.state.with_player_move(current_player, move)
                 # todo : next_player/current_player should be in state
-                next_player = state_after_player_move.next_player(current_node.current_player)
-                child_node = Node(me, state_after_player_move, next_player, move, current_node.depth + 1)
-                child_node.parent = current_node
+                next_player = state_after_player_move.next_player(current_player)
+                child_node = Node(state_after_player_move, next_player, move, current_node.depth + 1)
+
                 current_node.add_child(child_node)
+                nodes.appendleft(child_node)
 
-            current_node = current_node.current_child()
 
-        elif not current_node.visited and not moves and current_node.current_player != me:
+        elif not current_node.visited and not moves and current_player != me:
+            debug(f"{indent}First visit of node: {current_node.id()} (p={current_player}) without moves (dies this turn)")
+
             current_node.visited = True
-            current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
-            current_node.children = []
 
-            state_after_player_death = current_node.state.kill(current_node.current_player)
-            next_player = state_after_player_death.next_player(current_node.current_player)
-            child_node = Node(me, state_after_player_death, next_player, D_DOWN, current_node.depth + 1)
-            child_node.parent = current_node
+            state_after_player_death = current_node.state.kill(current_player)
+            next_player = state_after_player_death.next_player(current_player)
+            child_node = Node(state_after_player_death, next_player, D_DOWN, current_node.depth + 1)
+
             current_node.add_child(child_node)
+            nodes.appendleft(child_node)
 
-            current_node = child_node
 
-        elif current_node.is_max():
-            last_solved_child = current_node.current_child()
-            debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
-            if last_solved_child.score > current_node.score:
-                current_node.score = last_solved_child.score
-                debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
+        else:
+            # 2nd visit on a non-terminal node: children are all evaluated
+            best_child = max(current_node.children, key=lambda child: child.score[current_player])
+            current_node.score = best_child.score
+            debug(f"{indent}Second visit of node: {current_node.id()} (p={current_player}) : best child is {best_child.id()} with score {score_str(best_child.score, current_player)}")
 
-            if last_solved_child.score >= beta:
-                # this node score is already better than the worst score on the above min step, so it's wont be kept
-                debug(f"{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
-                current_node = current_node.parent
-                continue
+            if current_node.parent is None:
+                # original node
+                debug(f"{indent}Original node evaluated: {current_node.id()} (p={current_player} : {score_str(current_node.score, current_player)})")
+                break
 
-            if last_solved_child.score > alpha:
-                debug(f"{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
-                alpha = last_solved_child.score
+            if not nodes:
+                # last and only 1st lvl node
+                nodes.appendleft(current_node.parent)
 
-            next_child = current_node.next_child()
+            last_node_added = nodes.popleft()
+            nodes.appendleft(last_node_added)
+            if last_node_added.id() != current_node.parent.id():
+                nodes.appendleft(current_node.parent)
 
-            if next_child is not None:
-                current_node = next_child
-            else:
-                current_node = current_node.parent
 
-        else: # min
-            last_solved_child = current_node.current_child()
-
-            if last_solved_child is None:
-                debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
-            if last_solved_child.score < current_node.score:
-                current_node.score = last_solved_child.score
-                debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
-
-            if last_solved_child.score <= alpha:
-                # this node score is already worse than the best score on the above max step, so it's wont be kept
-                debug(f"{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
-                current_node = current_node.parent
-                continue
-
-            if last_solved_child.score < beta:
-                debug(f"{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
-                beta = last_solved_child.score
-
-            next_child = current_node.next_child()
-            if next_child is not None:
-                current_node = next_child
-            else:
-                current_node = current_node.parent
-
-    debug(f"End of minmax. Nb visited: {nb_visited}, Nb terminal visited: {nb_terminal_visited}, Max depth reached: {max_depth_reached}", LOG_INFO)
+    debug(f"End of deep voronoi. Nb visited: {nb_visited}, Nb terminal visited: {nb_terminal_visited}, Max depth reached: {max_depth_reached}", LOG_INFO)
 
     if origin_node.children:
-        best_child_node = max(origin_node.children, key=lambda child: child.score)
-        debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}", LOG_INFO)
+        best_child_node = max(origin_node.children, key=lambda child: child.score[me])
+        debug(f"Best node: {best_child_node.id()} with score: {score_str(best_child_node.score, me)} : {direction_str(best_child_node.move)}", LOG_INFO)
         return best_child_node.move
     else:
-        debug("No possible moves, going down both figuratively and literally.", LOG_ERROR)
+        debug("Perhaps today is a good day to die. PREPARE FOR RAMMING SPEED!", LOG_ERROR)
         return D_DOWN
 
 def evaluate_for_player(state, me) -> int:
@@ -556,14 +540,18 @@ def game_loop():
         timer.reset()
         #state.print(LOG_INFO)
         # (12,5)(1,5)
-        # direction = choose_minmax_one(me, state)
-        direction = minmax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
+        free_space_per_user = compute_free_space_per_user(me, turn, state)
+        if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
+            debug(f"Using minimax_one because free space too high: {free_space_per_user} > {FREE_SPACE_PER_USER_THRESHOLD}", LOG_INFO)
+            direction = choose_minmax_one(me, state)
+        else:
+            debug(f"Using deep voronoi because free space low enough: {free_space_per_user} < {FREE_SPACE_PER_USER_THRESHOLD}", LOG_INFO)
+            direction = deep_voronoi(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH, turn=turn)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
         print_direction(direction)
 
-# config
 LOG_THRESHOLD = LOG_INFO
 
 hostname = socket.gethostname()
