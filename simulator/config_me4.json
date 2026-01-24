@@ -1,16 +1,20 @@
 {
   "ais": [
     {
-      "program_path": "../python/tron.py"
+      "program_path": "../python/tron.py",
+      "initial_coords": [ 5, 14 ]
     },
     {
-      "program_path": "../python/tron.py"
+      "program_path": "../python/tron.py",
+      "initial_coords": [ 18, 0 ]
     },
     {
-      "program_path": "../python/tron.py"
+      "program_path": "../python/tron.py",
+      "initial_coords": [ 13, 5 ]
     },
     {
-      "program_path": "../python/tron.py"
+      "program_path": "../python/tron.py",
+      "initial_coords": [ 6, 12 ]
     }
   ]
 }

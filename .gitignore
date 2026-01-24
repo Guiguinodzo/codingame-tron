@@ -2,3 +2,4 @@
 .idea
 .venv
 out
+simulator/logs
