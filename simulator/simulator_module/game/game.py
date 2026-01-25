@@ -1,6 +1,5 @@
-from lib.display import Display
-from lib.grid import Grid
-from lib.logger import Logger
+from simulator_module.game.grid import Grid
+from simulator_module.util.logger import Logger
 
 HEIGHT = 20
 WIDTH = 30
@@ -67,11 +66,3 @@ class Game:
                 )
                 line += cell_str
             self.logger.log(line)
-
-    def print_in_display(self, display: Display):
-        for y in range(self.grid.height):
-            for x in range(self.grid.width):
-                value = self.grid.get(x, y)
-                if value >= 0:
-                    display.write(x, y, value)
-        display.refresh()
