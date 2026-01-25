@@ -11,7 +11,6 @@ class ArenaPage(QWidget):
             background-image: url("{absolute_path_str("ui_files/images/background_0.png")}");
             background-repeat: no-repeat;
             background-position: center;
-            background-size: cover;
         """)
 
         layout = QVBoxLayout()

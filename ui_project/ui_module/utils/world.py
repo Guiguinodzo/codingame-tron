@@ -42,6 +42,10 @@ class World:
         self.load_icon = QIcon(absolute_path_str("ui_files/images/load_icon.png"))
         self.size_down_icon = QIcon(absolute_path_str("ui_files/images/size_down_icon.png"))
         self.size_up_icon = QIcon(absolute_path_str("ui_files/images/size_up_icon.png"))
+        self.play_icon = QIcon(absolute_path_str("ui_files/images/play_icon.png"))
+        self.pause_icon = QIcon(absolute_path_str("ui_files/images/pause_icon.png"))
+        self.fast_forward_icon = QIcon(absolute_path_str("ui_files/images/fast_forward_icon.png"))
+        self.fast_backward_icon = QIcon(absolute_path_str("ui_files/images/fast_backward_icon.png"))
 
     def set_last_path(path: str):
         settings = QSettings("MyStudio", "MyGame")
