@@ -12,11 +12,14 @@ class UISettings:
 
         self._json_last_path = ""
         self._ai_last_path = ""
+        self._board_game_speed = 1
+
         self._load()
 
     def _load(self):
         self._json_last_path = self.settings.value("ui/json_last_path", "", type=str)
         self._ai_last_path = self.settings.value("ui/ai_last_path", "", type=str)
+        self._board_game_speed = self.settings.value("ui/board_game_speed", "", type=int)
 
     def get_json_last_path(self):
         if len(self._json_last_path) > 0 and os.path.exists(self._json_last_path):
@@ -39,6 +42,14 @@ class UISettings:
             self._ai_last_path = path
             self.settings.setValue("ui/ai_last_path", path)
             self.settings.sync()
+
+    def get_board_game_speed(self):
+        return self._board_game_speed
+
+    def set_board_game_speed(self, speed):
+        self._board_game_speed = speed
+        self.settings.setValue("ui/board_game_speed", speed)
+        self.settings.sync()
 
 
 class PlayerData:
