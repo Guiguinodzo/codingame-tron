@@ -3,3 +3,4 @@
 .venv
 out
 simulator/logs
+**/__pycache__
