@@ -57,7 +57,7 @@ class Timer:
 
     def stop_step(self, step) -> float:
         return time.time() - self.steps.pop(step)
-        
+
 timer = Timer()
 
 class State:
@@ -207,7 +207,7 @@ def choose(me: int, state: State) -> int:
 
     return max_move
 
-def choose_minmax_one(me: int, state: State) -> int:
+def choose_minimax_one(me: int, state: State) -> int:
 
     best_move = 0
     best_score = -MAX_SCORE
@@ -312,7 +312,7 @@ class Node:
         self.children_index += 1
         return self.children[self.children_index] if self.children_index < len(self.children) else None
 
-def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
+def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
 
@@ -332,6 +332,8 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
     nb_terminal_visited = 0
     max_depth_reached = 0
 
+    indent="  "
+
     current_node = origin_node
     while True:
         if current_node is None:
@@ -342,7 +344,7 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             max_depth_reached = current_node.depth
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
-        debug(f"Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
+        debug(f"{indent * current_node.depth}Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
 
         depth_limit_reached = (current_node.depth >= max_depth
                                or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()))
@@ -390,19 +392,19 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
         elif current_node.is_max():
             last_solved_child = current_node.current_child()
-            debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+            debug(f"{indent * current_node.depth}last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
             if last_solved_child.score > current_node.score:
                 current_node.score = last_solved_child.score
                 debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
 
             if last_solved_child.score >= beta:
                 # this node score is already better than the worst score on the above min step, so it's wont be kept
-                debug(f"{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
                 current_node = current_node.parent
                 continue
 
             if last_solved_child.score > alpha:
-                debug(f"{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
                 alpha = last_solved_child.score
 
             next_child = current_node.next_child()
@@ -416,19 +418,19 @@ def minmax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             last_solved_child = current_node.current_child()
 
             if last_solved_child is None:
-                debug(f"last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+                debug(f"{indent * current_node.depth}last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
             if last_solved_child.score < current_node.score:
                 current_node.score = last_solved_child.score
-                debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
 
             if last_solved_child.score <= alpha:
                 # this node score is already worse than the best score on the above max step, so it's wont be kept
-                debug(f"{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
                 current_node = current_node.parent
                 continue
 
             if last_solved_child.score < beta:
-                debug(f"{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
                 beta = last_solved_child.score
 
             next_child = current_node.next_child()
@@ -505,7 +507,7 @@ def direction_str(direction):
         'UP' if direction == D_UP else
         'RIGHT' if direction == D_RIGHT else
         'DOWN' if direction == D_DOWN else
-        'ERROR'
+        'DOWN'
     )
 
 def compute_free_space_per_user(me, turn, state):
@@ -556,8 +558,13 @@ def game_loop():
         timer.reset()
         #state.print(LOG_INFO)
         # (12,5)(1,5)
-        # direction = choose_minmax_one(me, state)
-        direction = minmax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
+        free_space_per_user = compute_free_space_per_user(me, turn, state)
+        if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
+            debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one')
+            direction = choose_minimax_one(me, state)
+        else:
+            debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax')
+            direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
 
@@ -582,6 +589,6 @@ MAX_DEPTH = 5
 MAX_TIME_RATIO = 0.05
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD=80
+FREE_SPACE_PER_USER_THRESHOLD=50
 
 game_loop()
