@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
 from PySide6.QtGui import QPixmap, QIcon
 
 from ui_module.core.simulator.database import PlayersSettings, UISettings
@@ -46,10 +45,3 @@ class World:
         self.pause_icon = QIcon(absolute_path_str("ui_files/images/pause_icon.png"))
         self.fast_forward_icon = QIcon(absolute_path_str("ui_files/images/fast_forward_icon.png"))
         self.fast_backward_icon = QIcon(absolute_path_str("ui_files/images/fast_backward_icon.png"))
-
-    def set_last_path(path: str):
-        settings = QSettings("MyStudio", "MyGame")
-
-        if path:
-            settings.setValue("ui/last_path", path)
-            settings.sync()

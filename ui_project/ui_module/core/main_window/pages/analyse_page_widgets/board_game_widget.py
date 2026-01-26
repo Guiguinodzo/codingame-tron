@@ -1,13 +1,88 @@
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer, QRectF
+from PySide6.QtGui import QColor, QPainter, QPen, QBrush
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSlider, QHBoxLayout, QPushButton, QLabel, QSpinBox
 
+from ui_module.core.simulator.database import PlayersSettings
 from ui_module.utils.qt.qt_utils import set_tron_button_style, set_tron_spinbox_style
 from ui_module.utils.world import World
 
 
 class GameWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.grid_w = 30
+        self.grid_h = 20
+
+        self.players_paths: list[list[tuple[int, int]]] = [[], [], [], []]
+
+        self.setMinimumSize(300, 200)
+
+        self.players_settings = PlayersSettings()
+
+    # ---------------- API ----------------
+
+    def set_state(self, players_paths: list[list[tuple[int, int]]]):
+        """
+        players_paths = [
+            [(x,y), ...],  # player 0
+            [(x,y), ...],  # player 1
+            [(x,y), ...],  # player 2
+            [(x,y), ...],  # player 3
+        ]
+        """
+        self.players_paths = players_paths
+        self.update()
+
+    def clear(self):
+        self.players_paths = [[], [], [], []]
+        self.update()
+
+    # ---------------- DRAW ----------------
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+
+        cell_w = w / self.grid_w
+        cell_h = h / self.grid_h
+
+        # ---- background ----
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 220))
+
+        # ---- grid ----
+        grid_pen = QPen(QColor(0, 246, 255, 60))
+        painter.setPen(grid_pen)
+
+        for x in range(self.grid_w + 1):
+            painter.drawLine(int(x * cell_w), 0, int(x * cell_w), h)
+
+        for y in range(self.grid_h + 1):
+            painter.drawLine(0, int(y * cell_h), w, int(y * cell_h))
+
+        # ---- players ----
+        for player_index, path in enumerate(self.players_paths):
+            if not path:
+                continue
+
+            color = self.players_settings.get_color(player_index)
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(color))
+
+            for x, y in path:
+                rect = QRectF(
+                    x * cell_w,
+                    y * cell_h,
+                    cell_w,
+                    cell_h
+                )
+                painter.drawRect(rect)
+
+        painter.end()
 
 
     def resizeEvent(self, event):
