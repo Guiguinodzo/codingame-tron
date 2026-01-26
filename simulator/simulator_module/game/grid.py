@@ -1,3 +1,5 @@
+import copy
+
 class Grid:
     width: int
     height: int
@@ -22,3 +24,8 @@ class Grid:
             for y in range(self.height):
                 if self.data[x][y] == old_value:
                     self.data[x][y] = new_value
+
+    def __deepcopy__(self, _):
+        new_grid = Grid(self.width, self.height)
+        new_grid.data = copy.deepcopy(self.data)
+        return new_grid

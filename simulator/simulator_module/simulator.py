@@ -37,27 +37,28 @@ class Simulation:
         turn = 0
         if progress_callback:
             progress_callback(turn, -1, "start")
-        while self.game.winner() == -1:
-            for player in range(self.game.nb_players):
-                if self.game.winner() != -1:
+
+        while self.game.get_last_state().winner() == -1:
+            for player in range(self.game.get_nb_players()):
+                if self.game.get_last_state().winner() != -1:
                     continue
 
-                if self.game.is_dead(player):
+                if self.game.get_last_state().is_dead(player):
                     self.ais[player].stop()
                     turn +=1
                     if progress_callback:
                         progress_callback(turn, player, "death")
                     continue
 
-                self.ais[player].write_settings(self.game.nb_players, player)
+                self.ais[player].write_settings(self.game.get_nb_players(), player)
 
-                for p in range(self.game.nb_players):
-                    (x1, y1) = self.game.get_head(p)
-                    (x0, y0) = self.game.get_initial_coords(p)
+                for p in range(self.game.get_nb_players()):
+                    (x1, y1) = self.game.get_last_state().get_head(p)
+                    (x0, y0) = self.game.get_player_initial_coords(p)
                     self.ais[player].write_player_info(p, x0, y0, x1, y1)
 
                 player_move = self.ais[player].read_move()
-                self.game.move_player(player, player_move)
+                self.game.move_player(player, player_move).print(self.logger)
 
                 turn += 1
                 if progress_callback:
@@ -65,11 +66,16 @@ class Simulation:
 
         turn = 600 # max turn is 598
         if progress_callback:
-            progress_callback(turn, self.game.winner(), "win")
+            progress_callback(turn, self.game.get_last_state().winner(), "win")
 
     def stop(self):
         for ai in self.ais:
             ai.stop()
+
+    def print_all_states(self):
+        for state in self.game.get_states():
+            self.logger.log(f"Turn: {state.get_turn()}  - Player: #{state.get_current_player()}")
+            state.print(self.logger)
 
 
 def progress_function(logger) -> Callable[[int, int, str],None]:
@@ -99,7 +105,8 @@ def main():
         simulation = Simulation(config, LOGGER)
         simulation.start(progress_function(LOGGER))
 
-
+        input("Press any key to print all states...")
+        simulation.print_all_states()
 
     except Exception:
         LOGGER.log(traceback.format_exc())
