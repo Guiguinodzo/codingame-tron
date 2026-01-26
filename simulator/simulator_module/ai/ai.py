@@ -1,9 +1,10 @@
 import time
+
 from subprocess import Popen, PIPE
 
 from pexpect import fdpexpect
 
-from lib.logger import Logger
+from simulator_module.util.logger import Logger
 
 
 class AI:
