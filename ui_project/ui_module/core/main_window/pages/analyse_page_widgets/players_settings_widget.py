@@ -43,20 +43,23 @@ class PlayersSettingsWidget(QWidget):
         self.load_button.setIconSize(QSize(32, 32))
         self.load_button.setFixedSize(48, 48)
         set_tron_button_style(self.load_button)
-        self.load_button.clicked.connect(lambda: self._load_settings())
+        self.load_button.clicked.connect(self._load_settings)
+        self.load_button.setToolTip("Load player settings.")
         self.save_button = QPushButton("")
         self.save_button.setIcon(self.world.save_icon)
         self.save_button.setIconSize(QSize(32, 32))
         self.save_button.setFixedSize(48, 48)
         set_tron_button_style(self.save_button)
-        self.save_button.clicked.connect(lambda: self._save_settings())
+        self.save_button.clicked.connect(self._save_settings)
+        self.save_button.setToolTip("Export player settings.")
         self.open = True
         self.open_button = QPushButton("")
         self.open_button.setIcon(self.world.size_down_icon)
         self.open_button.setIconSize(QSize(32, 32))
         self.open_button.setFixedSize(48, 48)
         set_tron_button_style(self.open_button)
-        self.open_button.clicked.connect(lambda: self.open_close())
+        self.open_button.clicked.connect(self.open_close)
+        self.open_button.setToolTip("Hide player settings.")
         self.top_layout.addWidget(self.load_button)
         self.top_layout.addWidget(self.save_button)
         self.top_layout.addWidget(self.open_button)
@@ -82,12 +85,23 @@ class PlayersSettingsWidget(QWidget):
 
         self.collapsable_widget = CollapsableWidget(self.content_layout, False, self.open_button)
         self.top_part_layout.addWidget(self.collapsable_widget)
+
         self.layout.addLayout(self.top_part_layout)
+
+        self.start_layout = QHBoxLayout()
+        self.start_button = QPushButton(" Run Simulation ")
+        self.start_layout.addStretch()
+        set_tron_button_style(self.start_button)
+        self.start_layout.addWidget(self.start_button)
+        self.start_layout.addStretch()
+
+        self.layout.addLayout(self.start_layout)
 
         self.layout.addStretch()
 
         self.setLayout(self.layout)
         self._load_database()
+        self.start_button.clicked.connect(self._start_simulation)
 
     def create_player_widget(self, index: int, default_color: QColor) -> PlayerUI:
         widget = QWidget()
@@ -225,6 +239,8 @@ class PlayersSettingsWidget(QWidget):
         )
 
     def _enable_widgets(self):
+        non_loaded_enabled_ai = False
+        enabled_load_ai = [False] * 4
         for i in range(self.world.player_settings.PLAYER_COUNT):
             self.players[i].random_pos.setEnabled(self.players[i].enable.isChecked())
             self.players[i].choose.setEnabled(self.players[i].enable.isChecked())
@@ -233,6 +249,32 @@ class PlayersSettingsWidget(QWidget):
             self.players[i].y.setEnabled(self.players[i].enable.isChecked() and not self.players[i].random_pos.isChecked())
             self.players[i].load.setEnabled(self.players[i].enable.isChecked())
             self.players[i].path.setEnabled(self.players[i].enable.isChecked())
+            if self.players[i].enable.isChecked():
+                if self.world.player_settings.get_ai_path(i):
+                    enabled_load_ai[i] = True
+                else:
+                    non_loaded_enabled_ai = True
+
+        if non_loaded_enabled_ai:
+            self.start_button.setEnabled(False)
+            self.start_button.setToolTip("You need to load all enabled AI.")
+        else:
+            if enabled_load_ai.count(True) > 1:
+                non_random_starting_pos = []
+                for i in range(self.world.player_settings.PLAYER_COUNT):
+                    if enabled_load_ai[i] and not self.players[i].random_pos.isChecked():
+                        non_random_starting_pos.append((self.players[i].x.value(), self.players[i].y.value()))
+                if len(non_random_starting_pos) > 0 and len(non_random_starting_pos) != len(set(non_random_starting_pos)):
+                    self.start_button.setEnabled(False)
+                    self.start_button.setToolTip("You cannot have two identical starting positions.")
+                else:
+                    self.start_button.setEnabled(True)
+                    self.start_button.setToolTip("")
+            else:
+                self.start_button.setEnabled(False)
+                self.start_button.setToolTip("You need to have at least 2 enabled and loaded AI.")
+
+
 
     def _load_database(self):
         for i in range(self.world.player_settings.PLAYER_COUNT):
@@ -260,15 +302,17 @@ class PlayersSettingsWidget(QWidget):
     def open_close(self):
         if self.open:
             self.open_button.setIcon(self.world.size_up_icon)
+            self.open_button.setToolTip("Show player settings.")
         else:
             self.open_button.setIcon(self.world.size_down_icon)
+            self.open_button.setToolTip("Hide player settings.")
         self.open_button.setIconSize(QSize(32, 32))
         self.open = not self.open
 
     def _load_settings(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load players settings",
+            "Load player settings",
             self.world.ui_settings.get_json_last_path(),
             "JSON Files (*.json);;All Files (*)"
         )
@@ -281,7 +325,7 @@ class PlayersSettingsWidget(QWidget):
     def _save_settings(self):
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Save players settings",
+            "Export player settings",
             self.world.ui_settings.get_json_last_path(),
             "JSON Files (*.json);;All Files (*)"
         )
@@ -320,7 +364,7 @@ class PlayersSettingsWidget(QWidget):
         self._enable_widgets()
 
     def on_player_load_clicked(self, player_index):
-        (filename, _) = QFileDialog.getOpenFileName(self, "Open experiment configuration", self.world.ui_settings.get_ai_last_path(), "(*.json)")
+        (filename, _) = QFileDialog.getOpenFileName(self, "Open experiment configuration", self.world.ui_settings.get_ai_last_path(), "(*.py)")
         if filename:
             self.world.player_settings.set_ai_path(player_index, filename)
             self.world.ui_settings.set_ai_last_path(os.path.dirname(filename))
@@ -328,3 +372,6 @@ class PlayersSettingsWidget(QWidget):
                 self.players[player_index].path.setText("..." + filename[-27:])
             self.players[player_index].path.setText(filename)
             self._enable_widgets()
+
+    def _start_simulation(self):
+        print("start simulation")

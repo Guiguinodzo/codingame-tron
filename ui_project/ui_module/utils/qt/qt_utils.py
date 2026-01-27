@@ -36,6 +36,8 @@ def set_tron_button_style(button):
             background-color: transparent;
             border: 2px solid #00f6ff;
             border-radius: 2px;
+            color: #7df9ff;
+            font-size: 16px;
         }
 
         QPushButton:hover {
@@ -50,6 +52,8 @@ def set_tron_button_style(button):
             background-color: transparent;
             border: 2px solid rgba(120,120,120,120);
             border-radius: 2px;
+            color: rgba(120,120,120,120);
+            font-size: 16px;
         }
         """)
 
