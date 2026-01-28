@@ -1,5 +1,7 @@
 import copy
 
+from simulator_module.util.logger import Logger
+
 class Grid:
     width: int
     height: int
@@ -24,6 +26,17 @@ class Grid:
             for y in range(self.height):
                 if self.data[x][y] == old_value:
                     self.data[x][y] = new_value
+
+    def print(self, logger: Logger):
+        header = "_| " + " ".join([str(i % 10) for i in range(self.width)])
+        logger.log(header)
+        for y in range(self.height):
+            line = f"{y % 10}|"
+            for x in range(self.width):
+                value = self.get(x, y)
+                line += " " + (str(value) if value >= 0 else '.')
+            logger.log(line)
+
 
     def __deepcopy__(self, _):
         new_grid = Grid(self.width, self.height)
