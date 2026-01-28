@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List
+from typing import Optional
 from PySide6.QtCore import QObject, Signal
 
 @dataclass
@@ -8,7 +8,7 @@ class InputPlayer:
     id: int                         # 0 <= id < 4
     ai_path: str
     random_pos: bool                # If true starting_pos will be None value
-    starting_pos: tuple[int, int]   # Two players will never have the same starting_pos value
+    starting_pos: Optional[tuple[int, int]]   # Two players will never have the same starting_pos value
 
 @dataclass
 class OutputPlayer:
@@ -30,7 +30,7 @@ class SimulatorInterface(QObject, ABC):
         super().__init__(parent)
 
     @abstractmethod
-    def start_simulation(self, players: List[InputPlayer]):
+    def start_simulation(self, players: list[InputPlayer]):
         pass
 
     @abstractmethod
@@ -42,11 +42,11 @@ class SimulatorInterface(QObject, ABC):
         pass
 
     @abstractmethod
-    def get_player_output_at(self, step: int, player_id: int) -> str:
+    def get_player_stdout_at(self, step: int, player_id: int) -> str:
         pass
 
     @abstractmethod
-    def get_player_log_at(self, step: int, player_id: int) -> str:
+    def get_player_stderr_at(self, step: int, player_id: int) -> str:
         pass
 
     @abstractmethod
