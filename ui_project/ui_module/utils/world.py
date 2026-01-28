@@ -1,3 +1,4 @@
+import random
 import sys
 from pathlib import Path
 
@@ -45,3 +46,27 @@ class World:
         self.pause_icon = QIcon(absolute_path_str("ui_files/images/pause_icon.png"))
         self.fast_forward_icon = QIcon(absolute_path_str("ui_files/images/fast_forward_icon.png"))
         self.fast_backward_icon = QIcon(absolute_path_str("ui_files/images/fast_backward_icon.png"))
+
+    def start_simulation(self):
+        simulation_config = {
+            "nb_players": 4,
+            "ais": []
+        }
+
+
+        for player_id in range(0, 4):
+            enabled = self.player_settings.get_enable(player_id)
+            random_position = self.player_settings.get_random_pos(player_id)
+
+            if not enabled:
+                initial_coords = (-1, -1)
+            elif random_position:
+                initial_coords = (int(random.random() % 30), int(random.random() * 20))
+            else:
+                initial_coords = self.player_settings.get_position(player_id)
+            ai_path = self.player_settings.get_ai_path(player_id)
+            ai_config = {
+                "program_path": ai_path,
+                initial_coords: initial_coords
+            }
+            simulation_config['ais'].append(ai_config)

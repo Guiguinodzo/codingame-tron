@@ -37,7 +37,7 @@ class Simulation:
         self.ais: list[AI] = []
         for (player, ai_config) in enumerate(config.ais):
             self._logger.log(ai_config.program_path)
-            self.ais.append(AI(ai_config.program_path, ai_config.initial_coords, log_directory, self._logger))
+            self.ais.append(AI(player, ai_config.program_path, ai_config.initial_coords, log_directory, self._logger))
 
         self.game = Game([ai.initial_coords for ai in self.ais], self._logger)
 
@@ -63,7 +63,7 @@ class Simulation:
                         progress_callback(turn, player, "death")
                     continue
 
-                self.ais[player].write_settings(self.game.get_nb_players(), player)
+                self.ais[player].write_settings(self.game.get_nb_players())
 
                 for p in range(self.game.get_nb_players()):
                     (x1, y1) = self.game.get_last_state().get_head(p)

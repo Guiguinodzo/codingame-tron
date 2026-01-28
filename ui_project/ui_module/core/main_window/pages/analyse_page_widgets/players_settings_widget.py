@@ -11,6 +11,9 @@ from ui_module.utils.qt.collapsable_widget import CollapsableWidget
 from ui_module.utils.qt.qt_utils import set_tron_button_style, put_in_frame, set_tron_spinbox_style
 from ui_module.utils.world import World
 
+from simulator_module.simulator import Simulation
+
+
 @dataclass
 class PlayerUI:
     widget: QWidget
@@ -375,3 +378,4 @@ class PlayersSettingsWidget(QWidget):
 
     def _start_simulation(self):
         print("start simulation")
+        self.world.start_simulation()

@@ -33,7 +33,7 @@ class LogTree:
         matching_child = None
         matching_child_index = None
         for (index, child) in enumerate(self.children):
-            if child.id in id:
+            if child.player_id in id:
                 matching_child = child
                 matching_child_index = index
                 break
@@ -66,7 +66,7 @@ class LogTree:
         elif self.id in log_id:
             matching_child = None
             for (index, child) in enumerate(self.children):
-                if child.id in log_id:
+                if child.player_id in log_id:
                     matching_child = child
                     break
             matching_child.find_and_print(log_id, log, indent + (" " * TREE_INDENT_SIZE), writer)
