@@ -29,7 +29,7 @@ class Simulation:
 
     _state: SimulationState = SimulationState.INITIALIZED
 
-    def __init__(self, config: Config, logger):
+    def __init__(self, config: Config, logger = LOGGER):
         self._config = config
         self._logger = logger
         self._logger.log(f"Config: {config}")
