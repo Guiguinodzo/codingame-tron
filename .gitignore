@@ -4,3 +4,4 @@
 out
 simulator/logs
 **/__pycache__
+*.whl
