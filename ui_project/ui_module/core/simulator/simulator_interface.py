@@ -4,8 +4,7 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 from simulator_module.config import Config
-
-from simulator_module.simulator import Simulation, SimulationState
+from simulator_module.simulator import Simulation
 
 
 @dataclass
@@ -52,7 +51,8 @@ class SimulatorInterface(QObject, ABC):
             self._map_user(player.id, index)
 
         self.simulation = Simulation(Config(config))
-        self.simulation.start()
+        self.simulation.start(lambda turn, _, _2 : self.advancement.emit(turn/9.5))
+        self.finished.emit()
 
     def _map_user(self, player_ui_id: int, player_simulator_id: int):
         self.ui_to_simulator_player_mapping[player_ui_id] = player_simulator_id
