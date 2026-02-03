@@ -6,8 +6,18 @@ from PySide6.QtGui import QColor
 
 
 class UISettings:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self):
+        # Empêche plusieurs initialisations
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+        self._initialized = True
         self.settings = QSettings("CondingGame", "Tron")
 
         self._json_last_path = ""
@@ -64,8 +74,18 @@ class PlayerData:
 
 class PlayersSettings:
     PLAYER_COUNT = 4
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self):
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+        self._initialized = True
+
         self.settings = QSettings("CondingGame", "Tron")
 
         colors = [

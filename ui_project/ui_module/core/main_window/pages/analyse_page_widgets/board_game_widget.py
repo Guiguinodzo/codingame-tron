@@ -1,5 +1,3 @@
-import time
-
 from PySide6.QtCore import Qt, QSize, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QLinearGradient
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSlider, QHBoxLayout, QPushButton, QLabel, QSpinBox
@@ -236,7 +234,7 @@ class BoardGameWidget(QWidget):
         self.speed_label.setStyleSheet("color:#7df9ff; font-size:14px;")
 
         self.speed_spin = QSpinBox()
-        self.speed_spin.setRange(1, 10)
+        self.speed_spin.setRange(1, 100)
         self.speed_spin.setValue(self.world.ui_settings.get_board_game_speed())
         set_tron_spinbox_style(self.speed_spin)
 
@@ -356,9 +354,14 @@ class BoardGameWidget(QWidget):
             board = self.world.simulator.get_board_at(value)
             positions = []
             for index in range(self.world.player_settings.PLAYER_COUNT):
+                found = False
                 for player in board.players:
                     if player.id == index:
                         positions.append(player.trail)
+                        found = True
+                        continue
+                if not found:
+                    positions.append([])
             self.game_widget.set_state(positions)
 
     def _enable_widgets(self):
@@ -400,3 +403,4 @@ class BoardGameWidget(QWidget):
             self.set_max_steps(self.world.simulator.get_total_step_number())
             self.game_widget.stop_loading()
             self._enable_widgets()
+            self.set_value(0)
