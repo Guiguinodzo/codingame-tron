@@ -297,7 +297,7 @@ class Node:
             return "#"
         else:
             move_short_name = direction_str(self.move)[0]
-            return f"{self.parent.id()}.{self.parent.current_player}{'+' if self.max else '-'}{move_short_name}"
+            return f"{self.parent.id()}.{self.parent.current_player}{'+' if self.parent.max else '-'}{move_short_name}"
 
     def is_max(self) -> bool:
         return self.max
@@ -309,6 +309,10 @@ class Node:
         return self.children[self.children_index] if self.children_index < len(self.children) else None
 
     def next_child(self) -> Self:
+        """
+        Return the next child to visit and updates the index
+        :return: The next child to visit
+        """
         self.children_index += 1
         return self.children[self.children_index] if self.children_index < len(self.children) else None
 
@@ -344,7 +348,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             max_depth_reached = current_node.depth
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
-        debug(f"{indent * current_node.depth}Current node: {current_node.id()} with moves: {[direction_str(move) for move in moves]}")
+        debug(f"{indent * current_node.depth}{current_node.id()} with moves: {[direction_str(move) for move in moves]}")
 
         depth_limit_reached = (current_node.depth >= max_depth
                                or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()))
@@ -377,9 +381,9 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
             current_node = current_node.current_child()
 
-        elif not current_node.visited and not moves and current_node.current_player != me:
+        elif not current_node.visited and not moves and not current_node.is_max():
             current_node.visited = True
-            current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
+            current_node.score = MAX_SCORE
             current_node.children = []
 
             state_after_player_death = current_node.state.kill(current_node.current_player)
@@ -392,10 +396,15 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
         elif current_node.is_max():
             last_solved_child = current_node.current_child()
-            debug(f"{indent * current_node.depth}last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+            if last_solved_child is None:
+                debug(f"{indent * current_node.depth}{current_node.id()}last_solved_child is None, should never happen. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+                current_node = current_node.parent
+                continue
+
+
             if last_solved_child.score > current_node.score:
+                debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
                 current_node.score = last_solved_child.score
-                debug(f"{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
 
             if last_solved_child.score >= beta:
                 # this node score is already better than the worst score on the above min step, so it's wont be kept
@@ -418,10 +427,13 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             last_solved_child = current_node.current_child()
 
             if last_solved_child is None:
-                debug(f"{indent * current_node.depth}last_solved_child is None. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+                debug(f"{indent * current_node.depth}{current_node.id()}last_solved_child is None, should never happen. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
+                current_node = current_node.parent
+                continue
+
             if last_solved_child.score < current_node.score:
-                current_node.score = last_solved_child.score
                 debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
+                current_node.score = last_solved_child.score
 
             if last_solved_child.score <= alpha:
                 # this node score is already worse than the best score on the above max step, so it's wont be kept
@@ -442,6 +454,9 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
     debug(f"End of minmax. Nb visited: {nb_visited}, Nb terminal visited: {nb_terminal_visited}, Max depth reached: {max_depth_reached}", LOG_INFO)
 
     if origin_node.children:
+        for child_node in origin_node.children:
+            debug(f"Final evaluation: {child_node.id()} (move={direction_str(child_node.move)}) score = {child_node.score})")
+
         best_child_node = max(origin_node.children, key=lambda child: child.score)
         debug(f"Best node: {best_child_node.id()} with score: {best_child_node.score} : {direction_str(best_child_node.move)}", LOG_INFO)
         return best_child_node.move
@@ -463,8 +478,8 @@ def evaluate_for_player(state, me) -> int:
 
     voronois = voronoi(state)
 
-    for (player, voronoi_for_player) in enumerate(voronois):
-        debug(f"voronoi for {player} : {voronoi_for_player}")
+    # for (player, voronoi_for_player) in enumerate(voronois):
+    #     debug(f"voronoi for {player} : {voronoi_for_player}")
 
     score = voronois[me]
 
@@ -491,8 +506,8 @@ def voronoi(state: State) -> list[int]:
             for adjacent in voronoi_state.get_valid_adjacent(current):
                 remaining.appendleft((player, adjacent))
 
-    debug(f"Voronoi took {timer.stop_step('voronoi') * 1000:.3f} ms")
-    voronoi_state.print()
+    # debug(f"Voronoi took {timer.stop_step('voronoi') * 1000:.3f} ms")
+    # voronoi_state.print()
 
     return counters
 
@@ -529,8 +544,8 @@ def game_loop():
         # n: total number of players (2 to 4).
         # p: your player number (0 to 3).
         nb_players, me = [int(i) for i in input().split()]
-        if turn == 0:
-            debug(f"I am p{me}")
+        # if turn == 0:
+        debug(f"I am p{me}")
         turn += 1
 
         if state is None:
@@ -589,6 +604,6 @@ MAX_DEPTH = 5
 MAX_TIME_RATIO = 0.05
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD=50
+FREE_SPACE_PER_USER_THRESHOLD=600
 
 game_loop()
