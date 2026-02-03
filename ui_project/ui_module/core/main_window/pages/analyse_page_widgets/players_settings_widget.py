@@ -299,7 +299,7 @@ class PlayersSettingsWidget(QWidget):
             path = self.world.player_settings.get_ai_path(i)
             if path:
                 if len(path) > 40:
-                    self.players[i].path = "..." + self.world.player_settings.get_ai_path(i)[-37:]
+                    path = "..." + self.world.player_settings.get_ai_path(i)[-37:]
                 self.players[i].path.setText(path)
         self._enable_widgets()
 
@@ -380,13 +380,14 @@ class PlayersSettingsWidget(QWidget):
     def _start_simulation(self):
         input_players = []
         for i in range(self.world.player_settings.PLAYER_COUNT):
-            input_players.append(
-                InputPlayer(
-                    id = i,
-                    ai_path = self.world.player_settings.get_ai_path(i),
-                    random_pos = self.world.player_settings.get_random_pos(i),
-                    starting_pos = None if self.world.player_settings.get_random_pos(i) else self.world.player_settings.get_position(i)
+            if self.world.player_settings.get_enable(i):
+                input_players.append(
+                    InputPlayer(
+                        id = i,
+                        ai_path = self.world.player_settings.get_ai_path(i),
+                        random_pos = self.world.player_settings.get_random_pos(i),
+                        starting_pos = None if self.world.player_settings.get_random_pos(i) else self.world.player_settings.get_position(i)
+                    )
                 )
-            )
         self.world.simulator.start_simulation(input_players)
         self.start_simulation.emit()

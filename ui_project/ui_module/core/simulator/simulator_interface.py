@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
+
 from PySide6.QtCore import QObject, Signal
+
 
 @dataclass
 class InputPlayer:
@@ -20,7 +22,10 @@ class OutputPlayer:
 class OutputBoard:
     players: list[OutputPlayer] = field(default_factory=list)
 
-class SimulatorInterface(QObject, ABC):
+class MetaSimulatorInterface(type(QObject), type(ABC)):
+    pass
+
+class SimulatorInterface(QObject, ABC, metaclass=MetaSimulatorInterface):
 
     # Signals
     advancement = Signal(float)     # The value should be in [float(0), float(1)].

@@ -1,8 +1,6 @@
-from PySide6.QtCore import Signal
+from ui_module.core.simulator.simulator_interface import SimulatorInterface, OutputBoard, OutputPlayer, InputPlayer
 from ui_module.core.simulator.simulator_module.config import Config
 from ui_module.core.simulator.simulator_module.simulator import Simulation
-
-from ui_module.core.simulator.simulator_interface import SimulatorInterface, OutputBoard, OutputPlayer, InputPlayer
 
 
 class Simulator(SimulatorInterface):
@@ -21,10 +19,13 @@ class Simulator(SimulatorInterface):
             "ais": []
         }
         for index, player in enumerate(players):
-            config["ais"].append({
-                "program_path": player.ai_path,
-                "initial_coords": player.starting_pos if not player.random_pos else None
-            })
+            player_config : dict = {
+                "program_path": player.ai_path
+            }
+            if not player.random_pos:
+                player_config['initial_coords'] = player.starting_pos
+
+            config["ais"].append(player_config)
             self._map_user(player.id, index)
 
         self.simulation = Simulation(Config(config))

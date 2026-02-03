@@ -11,7 +11,7 @@ class AiConfig:
     def __init__(self, config: dict) -> None:
         self.program_path = config['program_path']
         if not self.program_path:
-            raise Exception(f"Invalid program_path: {config['program_path']}")
+            raise Exception(f"Invalid program_path: {config['program_path']} in config: {config}")
         self.initial_coords = config.get('initial_coords',
                                          (int(random.random() * WIDTH), int(random.random() * HEIGHT)))
 
