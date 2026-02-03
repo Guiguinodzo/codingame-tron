@@ -43,7 +43,7 @@ class AnalysePage(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(20)
 
-        top_widget = BoardGameWidget()
+        self.board_game_widget = BoardGameWidget()
 
         bottom_widget = QWidget()
         bottom_layout = QHBoxLayout()
@@ -51,7 +51,7 @@ class AnalysePage(QWidget):
         bottom_layout.addWidget(put_in_frame(label_2))
         bottom_widget.setLayout(bottom_layout)
 
-        left_layout.addWidget(put_in_frame(top_widget))
+        left_layout.addWidget(put_in_frame(self.board_game_widget))
         left_layout.addWidget(bottom_widget)
 
         left_layout.setStretch(0, 0)
@@ -62,7 +62,11 @@ class AnalysePage(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(20)
 
-        right_layout.addWidget(put_in_frame(PlayersSettingsWidget()))
+        self.players_settings_widget = PlayersSettingsWidget()
+
+        right_layout.addWidget(put_in_frame(self.players_settings_widget))
+
+        self.players_settings_widget.start_simulation.connect(self.board_game_widget.simulator_started)
 
         left_widget.setLayout(left_layout)
         right_widget.setLayout(right_layout)

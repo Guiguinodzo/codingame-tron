@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtGui import QPixmap, QIcon
 
 from ui_module.core.simulator.database import PlayersSettings, UISettings
+from ui_module.core.simulator.simulator_impl import Simulator
 
 
 def absolute_path(relative_path: str) -> Path:
@@ -34,6 +35,7 @@ class World:
         self._load_resources()
         self.player_settings = PlayersSettings()
         self.ui_settings = UISettings()
+        self.simulator = Simulator()
 
     def _load_resources(self):
         self.collapsed_pixmap = QPixmap(absolute_path_str("ui_files/images/collapsed.png"))

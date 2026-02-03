@@ -1,12 +1,13 @@
 import os
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout, QLabel, QCheckBox, QSpinBox, QColorDialog, \
     QFileDialog
 
 from dataclasses import dataclass
 
+from ui_module.core.simulator.simulator_interface import InputPlayer
 from ui_module.utils.qt.collapsable_widget import CollapsableWidget
 from ui_module.utils.qt.qt_utils import set_tron_button_style, put_in_frame, set_tron_spinbox_style
 from ui_module.utils.world import World
@@ -25,6 +26,9 @@ class PlayerUI:
 
 
 class PlayersSettingsWidget(QWidget):
+
+    start_simulation = Signal()
+
     def __init__(self):
         super().__init__()
 
@@ -374,4 +378,15 @@ class PlayersSettingsWidget(QWidget):
             self._enable_widgets()
 
     def _start_simulation(self):
-        print("start simulation")
+        input_players = []
+        for i in range(self.world.player_settings.PLAYER_COUNT):
+            input_players.append(
+                InputPlayer(
+                    id = i,
+                    ai_path = self.world.player_settings.get_ai_path(i),
+                    random_pos = self.world.player_settings.get_random_pos(i),
+                    starting_pos = None if self.world.player_settings.get_random_pos(i) else self.world.player_settings.get_position(i)
+                )
+            )
+        self.world.simulator.start_simulation(input_players)
+        self.start_simulation.emit()

@@ -1,15 +1,11 @@
 from PySide6.QtCore import Signal
-from simulator_module.config import Config
-from simulator_module.simulator import Simulation
+from ui_module.core.simulator.simulator_module.config import Config
+from ui_module.core.simulator.simulator_module.simulator import Simulation
 
 from ui_module.core.simulator.simulator_interface import SimulatorInterface, OutputBoard, OutputPlayer, InputPlayer
 
 
 class Simulator(SimulatorInterface):
-
-    # Signals
-    advancement = Signal(float)     # The value should be in [float(0), float(1)].
-    finished = Signal()             # Send this signal when the simulation is ready for all the abstract methods (except for start_simulation).
 
     simulation: Simulation
 

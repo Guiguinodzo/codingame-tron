@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QSize, QTimer, QRectF
-from PySide6.QtGui import QColor, QPainter, QPen, QBrush
+from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QLinearGradient
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSlider, QHBoxLayout, QPushButton, QLabel, QSpinBox
 
 from ui_module.core.simulator.database import PlayersSettings
@@ -20,6 +20,13 @@ class GameWidget(QWidget):
 
         self.players_settings = PlayersSettings()
 
+        self.loading = False
+        self.progress = 0
+        self.banner_x = -1.0
+
+        self.anim_timer = QTimer(self)
+        self.anim_timer.timeout.connect(self.animate_banner)
+
     # ---------------- API ----------------
 
     def set_state(self, players_paths: list[list[tuple[int, int]]]):
@@ -36,6 +43,22 @@ class GameWidget(QWidget):
 
     def clear(self):
         self.players_paths = [[], [], [], []]
+        self.update()
+
+    def start_loading(self):
+        self.loading = True
+        self.progress = 0
+        self.banner_x = -self.width()
+        self.anim_timer.start(16)
+        self.update()
+
+    def set_progress(self, value: int):
+        self.progress = max(0, min(100, value))
+        self.update()
+
+    def stop_loading(self):
+        self.loading = False
+        self.anim_timer.stop()
         self.update()
 
     # ---------------- DRAW ----------------
@@ -82,8 +105,53 @@ class GameWidget(QWidget):
                 )
                 painter.drawRect(rect)
 
+        if self.loading:
+            self.draw_loading_overlay(painter)
+
         painter.end()
 
+    def draw_loading_overlay(self, painter: QPainter):
+        w = self.width()
+        h = self.height()
+
+        banner_h = h * 0.22
+        y = (h - banner_h) / 2
+
+        # glow background
+        grad = QLinearGradient(0, y, w, y + banner_h)
+        grad.setColorAt(0.0, QColor(0, 255, 255, 30))
+        grad.setColorAt(0.5, QColor(0, 255, 255, 200))
+        grad.setColorAt(1.0, QColor(0, 255, 255, 30))
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(grad))
+
+        rect = QRectF(self.banner_x, y, w, banner_h)
+        painter.drawRoundedRect(rect, 12, 12)
+
+        # text
+        painter.setPen(QColor(0, 0, 0))
+        font = painter.font()
+        font.setPointSize(int(banner_h * 0.25))
+        font.setBold(True)
+        painter.setFont(font)
+
+        text = f"SIMULATION — {self.progress}%"
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+    # ---------------- ANIMATION ----------------
+
+    def animate_banner(self):
+        speed = self.width() * 0.08
+
+        if self.banner_x < 0:
+            self.banner_x += speed
+            if self.banner_x > 0:
+                self.banner_x = 0
+
+        self.update()
+
+    # ---------------- UI ----------------
 
     def resizeEvent(self, event):
         # Récupère la largeur actuelle
@@ -100,6 +168,9 @@ class BoardGameWidget(QWidget):
         super().__init__()
 
         self.world = World()
+
+        self.game_computed = False
+        self.current_step = int(0)
 
         self.main_layout = QVBoxLayout()
 
@@ -199,6 +270,8 @@ class BoardGameWidget(QWidget):
         self.set_value(0)
         self.stop_signals = False
 
+        self._enable_widgets()
+
     # ---------------- API ----------------
 
     def set_max_steps(self, steps: int):
@@ -272,7 +345,39 @@ class BoardGameWidget(QWidget):
         self.play_btn.setIcon(self.world.play_icon)
 
     def set_value(self, value):
+        self.current_step = value
         self.timeline_slider.setValue(value)
         self.step_spin.setValue(value)
-        self.prev_btn.setEnabled(value > 0)
-        self.next_btn.setEnabled(value < self.max_steps)
+        self._enable_widgets()
+        if self.game_computed:
+            board = self.world.simulator.get_board_at(value)
+            positions = []
+            for index in range(self.world.player_settings.PLAYER_COUNT):
+                positions.append(board.players[index].trail)
+            self.game_widget.set_state(positions)
+
+    def _enable_widgets(self):
+        self.speed_spin.setEnabled(self.game_computed)
+        self.speed_label.setEnabled(self.game_computed)
+        self.step_spin.setEnabled(self.game_computed)
+        self.step_label.setEnabled(self.game_computed)
+        self.timeline_slider.setEnabled(self.game_computed)
+        self.next_btn.setEnabled(self.game_computed)
+        self.prev_btn.setEnabled(self.game_computed and self.current_step > 0)
+        self.play_btn.setEnabled(self.game_computed and self.current_step < self.max_steps)
+
+    def simulator_started(self):
+        self.game_computed = False
+        self.game_widget.start_loading()
+        self.world.simulator.advancement.connect(self.simulator_progress)
+        self.world.simulator.finished.connect(self.simulator_finished)
+        self._enable_widgets()
+
+    def simulator_progress(self, percent):
+        self.game_widget.set_progress(percent)
+
+    def simulator_finished(self):
+        self.game_computed = True
+        self.set_max_steps(self.world.simulator.get_total_step_number())
+        self.game_widget.stop_loading()
+        self._enable_widgets()
