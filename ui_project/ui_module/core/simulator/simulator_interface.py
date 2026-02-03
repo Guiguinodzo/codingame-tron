@@ -1,9 +1,9 @@
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
-from PySide6.QtCore import QObject, Signal
-
+from PySide6.QtCore import QObject, Signal, QThread, Slot
 
 @dataclass
 class InputPlayer:
@@ -26,16 +26,31 @@ class MetaSimulatorInterface(type(QObject), type(ABC)):
     pass
 
 class SimulatorInterface(QObject, ABC, metaclass=MetaSimulatorInterface):
+    class SimulationWorker(QObject):
+        finished = Signal()
+        advancement = Signal(float)
+
+        def __init__(self, simulator: "SimulatorInterface", players):
+            super().__init__()
+            self.simulator = simulator
+            self.players = players
+
+        @Slot()
+        def run(self):
+            self.simulator._start_simulation(self.players)
+            self.finished.emit()
 
     # Signals
-    advancement = Signal(float)     # The value should be in [float(0), float(1)].
+    advancement = Signal(float)     # The value should be in [float(0), float(100)].
     finished = Signal()             # Send this signal when the simulation is ready for all the abstract methods (except for start_simulation).
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._thread = None
+        self._worker = None
 
     @abstractmethod
-    def start_simulation(self, players: list[InputPlayer]):
+    def _start_simulation(self, players: list[InputPlayer]):
         pass
 
     @abstractmethod
@@ -61,3 +76,20 @@ class SimulatorInterface(QObject, ABC, metaclass=MetaSimulatorInterface):
     @abstractmethod
     def get_player_death_step(self, player_id: int) -> int:
         pass
+
+    def start_simulation(self, players: list[InputPlayer]):
+        self._thread = QThread(self)
+        self._worker = self.SimulationWorker(self, players)
+
+        self._worker.moveToThread(self._thread)
+
+        self._thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self.finished)
+        self._worker.finished.connect(self._thread.quit)
+
+        self._worker.advancement.connect(self.advancement)
+
+        self._thread.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+
+        self._thread.start()

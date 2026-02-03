@@ -16,7 +16,7 @@ HEIGHT = 20
 WIDTH = 30
 
 log_directory = f'logs/run_{time.strftime("%Y%m%d-%H%M%S")}'
-os.mkdir(log_directory)
+os.makedirs(log_directory, exist_ok=True)
 LOGGER = Logger(f'{log_directory}/simulator.log')
 
 class SimulationState(Enum):

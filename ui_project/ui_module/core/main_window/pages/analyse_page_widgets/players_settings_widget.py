@@ -7,7 +7,6 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout, QL
 
 from dataclasses import dataclass
 
-from ui_module.core.simulator.simulator_interface import InputPlayer
 from ui_module.utils.qt.collapsable_widget import CollapsableWidget
 from ui_module.utils.qt.qt_utils import set_tron_button_style, put_in_frame, set_tron_spinbox_style
 from ui_module.utils.world import World
@@ -378,16 +377,4 @@ class PlayersSettingsWidget(QWidget):
             self._enable_widgets()
 
     def _start_simulation(self):
-        input_players = []
-        for i in range(self.world.player_settings.PLAYER_COUNT):
-            if self.world.player_settings.get_enable(i):
-                input_players.append(
-                    InputPlayer(
-                        id = i,
-                        ai_path = self.world.player_settings.get_ai_path(i),
-                        random_pos = self.world.player_settings.get_random_pos(i),
-                        starting_pos = None if self.world.player_settings.get_random_pos(i) else self.world.player_settings.get_position(i)
-                    )
-                )
-        self.world.simulator.start_simulation(input_players)
         self.start_simulation.emit()

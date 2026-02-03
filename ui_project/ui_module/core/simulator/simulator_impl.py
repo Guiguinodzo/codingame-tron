@@ -12,7 +12,7 @@ class Simulator(SimulatorInterface):
         self.ui_to_simulator_player_mapping = {}
         self.simulator_to_ui_player_mapping = {}
 
-    def start_simulation(self, players: list[InputPlayer]):
+    def _start_simulation(self, players: list[InputPlayer]):
         self.ui_to_simulator_player_mapping = {}
         self.simulator_to_ui_player_mapping = {}
         config = {

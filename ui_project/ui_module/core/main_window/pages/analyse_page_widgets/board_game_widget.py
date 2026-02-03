@@ -1,8 +1,11 @@
+import time
+
 from PySide6.QtCore import Qt, QSize, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QLinearGradient
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSlider, QHBoxLayout, QPushButton, QLabel, QSpinBox
 
 from ui_module.core.simulator.database import PlayersSettings
+from ui_module.core.simulator.simulator_interface import InputPlayer
 from ui_module.utils.qt.qt_utils import set_tron_button_style, set_tron_spinbox_style
 from ui_module.utils.world import World
 
@@ -52,8 +55,8 @@ class GameWidget(QWidget):
         self.anim_timer.start(16)
         self.update()
 
-    def set_progress(self, value: int):
-        self.progress = max(0, min(100, value))
+    def set_progress(self, value: float):
+        self.progress = max(0, min(100, int(value)))
         self.update()
 
     def stop_loading(self):
@@ -276,8 +279,8 @@ class BoardGameWidget(QWidget):
 
     def set_max_steps(self, steps: int):
         self.max_steps = steps
-        self.timeline_slider.setRange(0, steps)
-        self.step_spin.setRange(0, steps)
+        self.timeline_slider.setRange(0, steps - 1)
+        self.step_spin.setRange(0, steps - 1)
 
     # ---------------- SLOTS ----------------
 
@@ -353,7 +356,9 @@ class BoardGameWidget(QWidget):
             board = self.world.simulator.get_board_at(value)
             positions = []
             for index in range(self.world.player_settings.PLAYER_COUNT):
-                positions.append(board.players[index].trail)
+                for player in board.players:
+                    if player.id == index:
+                        positions.append(player.trail)
             self.game_widget.set_state(positions)
 
     def _enable_widgets(self):
@@ -368,16 +373,30 @@ class BoardGameWidget(QWidget):
 
     def simulator_started(self):
         self.game_computed = False
-        self.game_widget.start_loading()
         self.world.simulator.advancement.connect(self.simulator_progress)
         self.world.simulator.finished.connect(self.simulator_finished)
+        self.game_widget.start_loading()
         self._enable_widgets()
+
+        input_players = []
+        for i in range(self.world.player_settings.PLAYER_COUNT):
+            if self.world.player_settings.get_enable(i):
+                input_players.append(
+                    InputPlayer(
+                        id = i,
+                        ai_path = self.world.player_settings.get_ai_path(i),
+                        random_pos = self.world.player_settings.get_random_pos(i),
+                        starting_pos = None if self.world.player_settings.get_random_pos(i) else self.world.player_settings.get_position(i)
+                    )
+                )
+        self.world.simulator.start_simulation(input_players)
 
     def simulator_progress(self, percent):
         self.game_widget.set_progress(percent)
 
     def simulator_finished(self):
-        self.game_computed = True
-        self.set_max_steps(self.world.simulator.get_total_step_number())
-        self.game_widget.stop_loading()
-        self._enable_widgets()
+        if not self.game_computed:
+            self.game_computed = True
+            self.set_max_steps(self.world.simulator.get_total_step_number())
+            self.game_widget.stop_loading()
+            self._enable_widgets()
