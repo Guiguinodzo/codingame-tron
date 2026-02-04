@@ -339,16 +339,14 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
     indent="  "
 
     current_node = origin_node
-    while True:
-        if current_node is None:
-            break
+    while current_node is not None:
 
         nb_visited += 1
         if current_node.depth >= max_depth_reached:
             max_depth_reached = current_node.depth
 
         moves = current_node.state.get_valid_moves_for_player(current_node.current_player)
-        debug(f"{indent * current_node.depth}{current_node.id()} with moves: {[direction_str(move) for move in moves]}")
+        debug(f"{indent * current_node.depth}{current_node.id()} with moves: {[direction_str(move) for move in moves]} - Children = {current_node.children_index} / {len(current_node.children)}")
 
         depth_limit_reached = (current_node.depth >= max_depth
                                or (0 < max_elapsed_time_ratio < timer.elapsed_time_ratio()))
@@ -356,17 +354,19 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
         is_terminal_node = (
                 (not moves and current_node.current_player == me) # my turn and no move = loss
                 or (current_node.state.get_winner() == me) # I won
-                or (current_node.current_player == me and depth_limit_reached)
+                or (current_node.current_player == me and depth_limit_reached and not current_node.visited)
             # limit depth by depth or by time
         )
 
         if is_terminal_node:
+            debug(f"{indent * current_node.depth}{current_node.id()} - terminal")
             current_node.score = evaluate_for_player(current_node.state, me)
             current_node.visited = True
             current_node = current_node.parent
             nb_terminal_visited += 1
 
         elif not current_node.visited and moves:
+            debug(f"{indent * current_node.depth}{current_node.id()} - first visit")
             current_node.visited = True
             current_node.score = -MAX_SCORE if current_node.is_max() else MAX_SCORE
             current_node.children = []
@@ -382,6 +382,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             current_node = current_node.current_child()
 
         elif not current_node.visited and not moves and not current_node.is_max():
+            debug(f"{indent * current_node.depth}{current_node.id()} - adversary death")
             current_node.visited = True
             current_node.score = MAX_SCORE
             current_node.children = []
@@ -395,22 +396,28 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             current_node = child_node
 
         elif current_node.is_max():
+            debug(f"{indent * current_node.depth}{current_node.id()} - max evaluation")
             last_solved_child = current_node.current_child()
             if last_solved_child is None:
                 debug(f"{indent * current_node.depth}{current_node.id()}last_solved_child is None, should never happen. current: {current_node.id()} index: {current_node.children_index} len(children)={len(current_node.children)}")
                 current_node = current_node.parent
                 continue
 
+            if current_node.parent is not None:
+                if last_solved_child.score > current_node.score:
+                    debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
+                    current_node.score = last_solved_child.score
 
-            if last_solved_child.score > current_node.score:
-                debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
-                current_node.score = last_solved_child.score
+                if last_solved_child.score >= beta:
+                    # this node score is already better than the worst score on the above min step, so it's wont be kept
+                    debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
+                    current_node = current_node.parent
+                    continue
+            else:
+                alpha = -MAX_SCORE
+                beta = MAX_SCORE
+                debug(f"{indent * current_node.depth}{current_node.id()} - resetting alpha={alpha} / beta={beta}")
 
-            if last_solved_child.score >= beta:
-                # this node score is already better than the worst score on the above min step, so it's wont be kept
-                debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
-                current_node = current_node.parent
-                continue
 
             if last_solved_child.score > alpha:
                 debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
@@ -419,11 +426,14 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
             next_child = current_node.next_child()
 
             if next_child is not None:
+                debug(f"{indent * current_node.depth}{current_node.id()} enqueueing next child {next_child.id()}")
                 current_node = next_child
             else:
+                debug(f"{indent * current_node.depth}{current_node.id()} no more children, enqueueing parent {current_node.parent.id() if current_node.parent is not None else '-'}")
                 current_node = current_node.parent
 
         else: # min
+            debug(f"{indent * current_node.depth}{current_node.id()} - min evaluation")
             last_solved_child = current_node.current_child()
 
             if last_solved_child is None:
@@ -447,9 +457,12 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
             next_child = current_node.next_child()
             if next_child is not None:
+                debug(f"{indent * current_node.depth}{current_node.id()} enqueueing next child {next_child.id()}")
                 current_node = next_child
             else:
+                debug(f"{indent * current_node.depth}{current_node.id()} no more children, enqueueing parent {current_node.parent.id() if current_node.parent is not None else '-'}")
                 current_node = current_node.parent
+
 
     debug(f"End of minmax. Nb visited: {nb_visited}, Nb terminal visited: {nb_terminal_visited}, Max depth reached: {max_depth_reached}", LOG_INFO)
 
