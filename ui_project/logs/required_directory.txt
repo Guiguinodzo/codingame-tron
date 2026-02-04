@@ -1,1 +1,0 @@
-Ce dossier est requis pour l'exécution et contiendra les logs des simulations

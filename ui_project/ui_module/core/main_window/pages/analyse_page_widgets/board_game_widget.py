@@ -25,8 +25,11 @@ class GameWidget(QWidget):
         self.progress = 0
         self.banner_x = -1.0
 
-        self.anim_timer = QTimer(self)
-        self.anim_timer.timeout.connect(self.animate_banner)
+        self.anim_timer_in = QTimer(self)
+        self.anim_timer_in.timeout.connect(self.animate_banner_in)
+
+        self.anim_timer_out = QTimer(self)
+        self.anim_timer_out.timeout.connect(self.animate_banner_out)
 
     # ---------------- API ----------------
 
@@ -50,7 +53,7 @@ class GameWidget(QWidget):
         self.loading = True
         self.progress = 0
         self.banner_x = -self.width()
-        self.anim_timer.start(16)
+        self.anim_timer_in.start(16)
         self.update()
 
     def set_progress(self, value: float):
@@ -58,8 +61,10 @@ class GameWidget(QWidget):
         self.update()
 
     def stop_loading(self):
-        self.loading = False
-        self.anim_timer.stop()
+        self.progress = 100
+        self.banner_x = 0
+        self.anim_timer_in.stop()
+        self.anim_timer_out.start(16)
         self.update()
 
     # ---------------- DRAW ----------------
@@ -142,13 +147,26 @@ class GameWidget(QWidget):
 
     # ---------------- ANIMATION ----------------
 
-    def animate_banner(self):
+    def animate_banner_in(self):
         speed = self.width() * 0.08
 
         if self.banner_x < 0:
             self.banner_x += speed
             if self.banner_x > 0:
                 self.banner_x = 0
+                self.anim_timer_in.stop()
+
+        self.update()
+
+    def animate_banner_out(self):
+        speed = self.width() * 0.08
+
+        if self.banner_x < self.width():
+            self.banner_x += speed
+            if self.banner_x > self.width():
+                self.banner_x = self.width()
+                self.anim_timer_out.stop()
+                self.loading = False
 
         self.update()
 
