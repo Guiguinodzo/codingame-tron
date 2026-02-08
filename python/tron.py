@@ -588,10 +588,10 @@ def game_loop():
         # (12,5)(1,5)
         free_space_per_user = compute_free_space_per_user(me, turn, state)
         if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
-            debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one')
+            debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one', LOG_INFO)
             direction = choose_minimax_one(me, state)
         else:
-            debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax')
+            debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
             direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
@@ -617,6 +617,6 @@ MAX_DEPTH = 5
 MAX_TIME_RATIO = 0.05
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD=600
+FREE_SPACE_PER_USER_THRESHOLD=100
 
 game_loop()
