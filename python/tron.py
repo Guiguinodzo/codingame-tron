@@ -8,6 +8,8 @@ from functools import reduce
 from operator import itemgetter
 from typing import Self
 
+import threading
+
 LOG_DEBUG = 0
 LOG_INFO = 1
 LOG_WARN = 2
@@ -410,7 +412,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
                 if last_solved_child.score >= beta:
                     # this node score is already better than the worst score on the above min step, so it's wont be kept
-                    debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
+                    debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} >= beta = {beta}")
                     current_node = current_node.parent
                     continue
             else:
@@ -420,7 +422,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
 
             if last_solved_child.score > alpha:
-                debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} < alpha = {alpha}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
                 alpha = last_solved_child.score
 
             next_child = current_node.next_child()
@@ -447,12 +449,12 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
             if last_solved_child.score <= alpha:
                 # this node score is already worse than the best score on the above max step, so it's wont be kept
-                debug(f"{indent * current_node.depth}{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} <= alpha = {alpha}")
                 current_node = current_node.parent
                 continue
 
             if last_solved_child.score < beta:
-                debug(f"{indent * current_node.depth}{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} > beta = {beta}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
                 beta = last_solved_child.score
 
             next_child = current_node.next_child()
@@ -598,6 +600,57 @@ def game_loop():
 
         print_direction(direction)
 
+def benchmark():
+
+    state = None
+    turn = 0
+
+    while True:
+        # n: total number of players (2 to 4).
+        # p: your player number (0 to 3).
+        nb_players, me = [int(i) for i in input().split()]
+        # if turn == 0:
+        debug(f"I am p{me}")
+        turn += 1
+
+        if state is None:
+            state = State(nb_players)
+
+        for player in range(nb_players):
+            # x0: starting X coordinate of lightcycle (or -1)
+            # y0: starting Y coordinate of lightcycle (or -1)
+            # x1: starting X coordinate of lightcycle (can be the same as X0 if you play before this player)
+            # y1: starting Y coordinate of lightcycle (can be the same as Y0 if you play before this player)
+            x0, y0, x1, y1 = [int(j) for j in input().split()]
+
+            if x0 == -1:
+                if state.is_player_alive(player):
+                    debug(f"Killing p{player}")
+                    state = state.kill(player)
+            else:
+                cell0 = xy_to_cell(x0, y0)
+                cell1 = xy_to_cell(x1, y1)
+                state.set_cell(cell0, player)
+                state.set_cell(cell1, player)
+                state.set_head(player, cell1)
+
+
+        timer.reset()
+
+        nb_voronoi = 0
+        while timer.elapsed_time_ratio() < .95:
+            threads = []
+            for _ in range(8):
+                thread = threading.Thread(target=voronoi, args=[state])
+                thread.start()
+                threads.append(thread)
+            for i, thread in enumerate(threads):
+                thread.join()
+                nb_voronoi += 1
+
+        debug(f"nb_voronoi={nb_voronoi}", LOG_INFO)
+        print_direction(D_DOWN)
+
 # config
 LOG_THRESHOLD = LOG_INFO
 
@@ -620,3 +673,4 @@ ERROR_SCORE = -999999
 FREE_SPACE_PER_USER_THRESHOLD=100
 
 game_loop()
+# benchmark()
