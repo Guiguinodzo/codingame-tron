@@ -8,8 +8,6 @@ from functools import reduce
 from operator import itemgetter
 from typing import Self
 
-import threading
-
 LOG_DEBUG = 0
 LOG_INFO = 1
 LOG_WARN = 2
@@ -19,12 +17,18 @@ HEIGHT = 20
 WIDTH = 30
 MAX_CELL = HEIGHT * WIDTH
 
-MAX_SCORE = WIDTH * HEIGHT
+MAX_SCORE = WIDTH * HEIGHT * 1001 + 1
 
 D_UP = -WIDTH
 D_DOWN = +WIDTH
 D_LEFT = -1
 D_RIGHT = +1
+
+# Performance ratio : 1/(50% quartile of benchmark in 1/1000 of ms)
+CODINGAME_SCORE=1/250
+H0ST_SCORE=1/190
+
+HOST_MALUS=CODINGAME_SCORE/H0ST_SCORE
 
 def debug(log, level=LOG_DEBUG):
     if level >= LOG_THRESHOLD:
@@ -45,7 +49,7 @@ class Timer:
         self.steps = {}
 
     def elapsed_time_ratio(self):
-        return self.elapsed_time() / 0.1  # max time = 100ms
+        return self.elapsed_time() / MAX_TIME  # max time = 100ms
 
     def elapsed_time(self):
         current_time = time.time()
@@ -479,7 +483,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
         debug("No possible moves, going down both figuratively and literally.", LOG_ERROR)
         return D_DOWN
 
-def evaluate_for_player(state, me) -> int:
+def evaluate_for_player(state, me, accessible = False) -> int:
     # prendre en compte la mort 0 = mort
     # mais toute partie fini forcément par mort
     # pour mitiger score = time to death
@@ -492,13 +496,75 @@ def evaluate_for_player(state, me) -> int:
         return MAX_SCORE
 
     voronois = voronoi(state)
+    accessible = count_accessible(state, me) if accessible else 0
 
     # for (player, voronoi_for_player) in enumerate(voronois):
     #     debug(f"voronoi for {player} : {voronoi_for_player}")
 
-    score = voronois[me]
+    score = (voronois[me] * 1000) + accessible
 
     return score
+
+class Evaluation:
+    """ Stocke l'ensembles des évaluations faites sur un State """
+
+    _distances_by_player = dict[int, list[int]]
+    _voronoi = list[int]
+    _controlled_by_player = dict[int, list[int]]
+
+    def __init__(self, state: State):
+        self._state = state
+        self._distances_by_player = {}
+
+    def _compute_distance_for_all(self):
+        for player in self._state.get_alive_players():
+            self._compute_distances_for_player(player)
+
+    def _compute_distances_for_player(self, player):
+        distances = [MAX_CELL]*MAX_CELL
+        origin = self._state.get_head(player)
+        remaining = deque()
+        for adjacent in self._state.get_valid_adjacent(origin):
+            remaining.appendleft((adjacent, 1))
+        while remaining:
+            current_cell, current_distance = remaining.pop()
+            if self._state.is_free(current_cell):
+                distances[current_cell] = current_distance
+                for adjacent in self._state.get_valid_adjacent(current_cell):
+                    remaining.appendleft((adjacent, current_distance + 1))
+
+        self._distances_by_player[player] = distances
+
+    def _compute_voronoi(self):
+        self._voronoi = [-1] * MAX_CELL
+        self._controlled_by_player = {}
+        for player in self._state.get_alive_players():
+            self._controlled_by_player[player] = []
+        for cell in range(MAX_CELL):
+            controlling_player = min(self._distances_by_player.keys(), key=lambda player : self._distances_by_player[player][cell])
+            self._voronoi[cell] = controlling_player
+            self._controlled_by_player[controlling_player].append(cell)
+
+    def _voronoi_borders_for_player(self, player):
+        # à calculer durant voronoi, si a voisin de b, b voisin de a
+        borders=[]
+        for cell in self._controlled_by_player[player]:
+            adjacent_cells = self._state.get_valid_adjacent(cell)
+            for adjacent_cell in adjacent_cells:
+                neighbours=set()
+                controlling_player = self._voronoi[adjacent_cell]
+                if -1 != controlling_player != player:
+                    neighbours.add(controlling_player)
+                if neighbours:
+                    borders.append((cell, neighbours))
+
+
+
+
+
+
+
+
 
 
 def voronoi(state: State) -> list[int]:
@@ -526,10 +592,30 @@ def voronoi(state: State) -> list[int]:
 
     return counters
 
+def count_accessible(state: State, player: int) -> int:
+    working_state = state.copy()
+    timer.start_step("count_accessible")
+
+    remaining = deque()
+    for adjacent in working_state.get_valid_adjacent(working_state.get_head(player)):
+        remaining.appendleft(adjacent)
+
+    count = 0
+    while bool(remaining):  # == is not empty
+        current = remaining.pop()
+        if working_state.is_free(current):
+            count += 1
+            working_state.set_cell(current, player + 4)
+            for adjacent in working_state.get_valid_adjacent(current):
+                remaining.appendleft(adjacent)
+
+    debug(f"count_accessible took {timer.stop_step('count_accessible') * 1000:.3f} ms")
+
+    return count
+
 
 def print_direction(direction):
     print(direction_str(direction))
-
 
 def direction_str(direction):
     return (
@@ -586,8 +672,6 @@ def game_loop():
 
 
         timer.reset()
-        #state.print(LOG_INFO)
-        # (12,5)(1,5)
         free_space_per_user = compute_free_space_per_user(me, turn, state)
         if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
             debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one', LOG_INFO)
@@ -596,63 +680,13 @@ def game_loop():
             debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
             direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
 
-        debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms)", LOG_WARN)
+        debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}%)", LOG_WARN)
 
         print_direction(direction)
 
-def benchmark():
-
-    state = None
-    turn = 0
-
-    while True:
-        # n: total number of players (2 to 4).
-        # p: your player number (0 to 3).
-        nb_players, me = [int(i) for i in input().split()]
-        # if turn == 0:
-        debug(f"I am p{me}")
-        turn += 1
-
-        if state is None:
-            state = State(nb_players)
-
-        for player in range(nb_players):
-            # x0: starting X coordinate of lightcycle (or -1)
-            # y0: starting Y coordinate of lightcycle (or -1)
-            # x1: starting X coordinate of lightcycle (can be the same as X0 if you play before this player)
-            # y1: starting Y coordinate of lightcycle (can be the same as Y0 if you play before this player)
-            x0, y0, x1, y1 = [int(j) for j in input().split()]
-
-            if x0 == -1:
-                if state.is_player_alive(player):
-                    debug(f"Killing p{player}")
-                    state = state.kill(player)
-            else:
-                cell0 = xy_to_cell(x0, y0)
-                cell1 = xy_to_cell(x1, y1)
-                state.set_cell(cell0, player)
-                state.set_cell(cell1, player)
-                state.set_head(player, cell1)
-
-
-        timer.reset()
-
-        nb_voronoi = 0
-        while timer.elapsed_time_ratio() < .95:
-            threads = []
-            for _ in range(8):
-                thread = threading.Thread(target=voronoi, args=[state])
-                thread.start()
-                threads.append(thread)
-            for i, thread in enumerate(threads):
-                thread.join()
-                nb_voronoi += 1
-
-        debug(f"nb_voronoi={nb_voronoi}", LOG_INFO)
-        print_direction(D_DOWN)
-
 # config
 LOG_THRESHOLD = LOG_INFO
+MAX_TIME=0.1
 
 hostname = socket.gethostname()
 debug(f"Sys: {os.name} Platform: {platform.system()} Release: {platform.release()} Python: {platform.python_version()} Hostname: {hostname}", LOG_INFO)
@@ -662,15 +696,15 @@ on_codingame='codemachine' in hostname
 if not on_codingame:
     debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
     LOG_THRESHOLD=LOG_DEBUG
+    MAX_TIME=MAX_TIME * HOST_MALUS
 else:
     debug("On codingame, log lvl = INFO", LOG_INFO)
 
 # config
-MAX_DEPTH = 5
+MAX_DEPTH = 4
 MAX_TIME_RATIO = 1
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD=100
+FREE_SPACE_PER_USER_THRESHOLD=600
 
 game_loop()
-# benchmark()
