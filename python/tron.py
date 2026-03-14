@@ -1,11 +1,11 @@
 import os
 import platform
 import socket
+import statistics
 import sys
 import time
 from collections import deque
 from functools import reduce
-from operator import itemgetter
 from typing import Self
 
 LOG_DEBUG = 0
@@ -189,30 +189,6 @@ class State:
         new.heads = self.heads[:]
         return new
 
-def choose(me: int, state: State) -> int:
-    valid_moves = state.get_valid_moves_for_player(me)
-    debug(f"Valid moves for p{me}: {', '.join([direction_str(d) for d in valid_moves])}", LOG_INFO)
-
-    moves_with_scores: list[tuple[int, int]] = []
-
-    for move in valid_moves:
-
-        state_with_player_move = state.with_player_move(me, move)
-
-        score = evaluate_for_player(state_with_player_move, me)
-
-        debug(f"Score if going {direction_str(move)} : {score}", LOG_INFO)
-        moves_with_scores += [(move, score)]
-
-    if not bool(moves_with_scores):
-        (max_move, max_score) = [0, ERROR_SCORE]
-    else:
-        (max_move, max_score) = max(moves_with_scores, key=itemgetter(1))
-
-    debug(f"Best choice: {direction_str(max_move)} ({max_score})", LOG_INFO)
-
-    return max_move
-
 def choose_minimax_one(me: int, state: State) -> int:
 
     best_move = 0
@@ -251,16 +227,6 @@ def choose_minimax_one(me: int, state: State) -> int:
 
     return best_move
 
-def insert_sorted_desc_from_end(input_list, element, comparison_key_extractor):
-    element_key = comparison_key_extractor(element)
-    index = len(input_list) - 1
-
-    while index >= 0 and element_key > comparison_key_extractor(input_list[index]):
-        index -= 1
-
-    # index = -1 or input[index] >= element_key
-    input_list.insert(index + 1, element)
-
 class Node:
     state: State
     current_player: int
@@ -276,6 +242,8 @@ class Node:
     visited: bool
     """ False the first time the node is visited, True afterwards """
     score: int
+    alpha: float
+    beta: float
 
     parent: Self
     children: list[Self]
@@ -292,6 +260,12 @@ class Node:
         self.parent = parent
         self.children = []
         self.children_index = 0
+        if parent:
+            self.alpha = parent.alpha
+            self.beta = parent.beta
+        else:
+            self.alpha = -MAX_SCORE - 1
+            self.beta = MAX_SCORE + 1
 
     def id(self):
         """
@@ -325,18 +299,6 @@ class Node:
 def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
 
     origin_node = Node(me, state, me, 0, 0)
-
-    alpha = -MAX_SCORE
-    """
-    on max node: if child.score > alpha then exit without visiting others children\n
-    on min node: if child.score < alpha then alpha = child.score 
-    """
-
-    beta = MAX_SCORE
-    """
-    on min node: if child.score < beta then exit without visiting others children\n
-    on max node: if child.score > beta then beta = child.score 
-    """
 
     nb_visited = 0
     nb_terminal_visited = 0
@@ -409,25 +371,19 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
                 current_node = current_node.parent
                 continue
 
-            if current_node.parent is not None:
-                if last_solved_child.score > current_node.score:
-                    debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
-                    current_node.score = last_solved_child.score
+            if last_solved_child.score > current_node.score:
+                debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} > {current_node.score}")
+                current_node.score = last_solved_child.score
 
-                if last_solved_child.score >= beta:
-                    # this node score is already better than the worst score on the above min step, so it's wont be kept
-                    debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} >= beta = {beta}")
-                    current_node = current_node.parent
-                    continue
-            else:
-                alpha = -MAX_SCORE
-                beta = MAX_SCORE
-                debug(f"{indent * current_node.depth}{current_node.id()} - resetting alpha={alpha} / beta={beta}")
+            if last_solved_child.score >= current_node.beta:
+                # this node score is already better than the worst score on the above min step, so it's wont be kept
+                debug(f"{indent * current_node.depth}{current_node.id()} Beta pruning: {last_solved_child.id()}.score = {last_solved_child.score} >= beta = {current_node.beta}")
+                current_node = current_node.parent
+                continue
 
-
-            if last_solved_child.score > alpha:
-                debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {alpha}")
-                alpha = last_solved_child.score
+            if last_solved_child.score > current_node.alpha:
+                debug(f"{indent * current_node.depth}{current_node.id()} Update alpha: {last_solved_child.id()}.score = {last_solved_child.score} > alpha = {current_node.alpha}")
+                current_node.alpha = last_solved_child.score
 
             next_child = current_node.next_child()
 
@@ -451,15 +407,15 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
                 debug(f"{indent * current_node.depth}{current_node.id()} Update score: {last_solved_child.id()}.score = {last_solved_child.score} < {current_node.score}")
                 current_node.score = last_solved_child.score
 
-            if last_solved_child.score <= alpha:
+            if last_solved_child.score <= current_node.alpha:
                 # this node score is already worse than the best score on the above max step, so it's wont be kept
-                debug(f"{indent * current_node.depth}{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} <= alpha = {alpha}")
+                debug(f"{indent * current_node.depth}{current_node.id()} Alpha pruning: {last_solved_child.id()}.score = {last_solved_child.score} <= alpha = {current_node.alpha}")
                 current_node = current_node.parent
                 continue
 
-            if last_solved_child.score < beta:
-                debug(f"{indent * current_node.depth}{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {beta}")
-                beta = last_solved_child.score
+            if last_solved_child.score < current_node.beta:
+                debug(f"{indent * current_node.depth}{current_node.id()} Update beta: {last_solved_child.id()}.score = {last_solved_child.score} < beta = {current_node.beta}")
+                current_node.beta = last_solved_child.score
 
             next_child = current_node.next_child()
             if next_child is not None:
@@ -483,6 +439,7 @@ def minimax(state, me, max_depth=600, max_elapsed_time_ratio = 0.0) -> int:
         debug("No possible moves, going down both figuratively and literally.", LOG_ERROR)
         return D_DOWN
 
+evaluate_for_player_durations = []
 def evaluate_for_player(state, me, accessible = False) -> int:
     # prendre en compte la mort 0 = mort
     # mais toute partie fini forcément par mort
@@ -492,6 +449,7 @@ def evaluate_for_player(state, me, accessible = False) -> int:
     # des fois, tuer un enemi libère de la place pour un autre
     # appliquer exponentielle ou logarithme
 
+    timer.start_step("evaluate_for_player")
     if state.get_winner() == me:
         return MAX_SCORE
 
@@ -503,18 +461,54 @@ def evaluate_for_player(state, me, accessible = False) -> int:
 
     score = (voronois[me] * 1000) + accessible
 
+    evaluate_for_player_durations.append(timer.stop_step("evaluate_for_player"))
+
     return score
 
-class Evaluation:
-    """ Stocke l'ensembles des évaluations faites sur un State """
+class VoronoiBorder:
 
-    _distances_by_player = dict[int, list[int]]
-    _voronoi = list[int]
-    _controlled_by_player = dict[int, list[int]]
+    def __init__(self, cell, top=None, left=None, bottom=None, right=None):
+        self.cell = cell
+        self.top_player = top
+        self.left_player = left
+        self.bottom_player = bottom
+        self.right_player = right
+
+    def set(self, direction, player):
+        if direction == D_UP:
+            self.top_player = player
+        elif direction == D_RIGHT:
+            self.right_player = player
+        elif direction == D_DOWN:
+            self.bottom_player = player
+        elif direction == D_LEFT:
+            self.left_player = player
+
+
+
+class Evaluation:
+    """ Stocke l'ensemble des évaluations faites sur un State """
+
+    _distances_by_player : dict[int, list[int]]
+    _voronoi : list[int]
+    _controlled_by_player : dict[int, list[int]]
+    _borders : dict[int, dict[int, VoronoiBorder]] # by player by cell
 
     def __init__(self, state: State):
         self._state = state
         self._distances_by_player = {}
+        self._voronoi =[]
+        self._controlled_by_player = {}
+        self._borders = {}
+
+    def compute_all(self):
+        timer.start_step("evaluation.compute_all")
+
+        self._compute_distance_for_all()
+        self._compute_voronoi()
+
+        elapsed_time = timer.stop_step("evaluation.compute_all")
+        debug(f"Evaluation.compute_all elapsed time: {elapsed_time*1000:.2f} ms (host-malus adjusted: {(elapsed_time/HOST_MALUS)*1000:.2f} ms)")
 
     def _compute_distance_for_all(self):
         for player in self._state.get_alive_players():
@@ -526,9 +520,11 @@ class Evaluation:
         remaining = deque()
         for adjacent in self._state.get_valid_adjacent(origin):
             remaining.appendleft((adjacent, 1))
+        visited = []
         while remaining:
             current_cell, current_distance = remaining.pop()
-            if self._state.is_free(current_cell):
+            if self._state.is_free(current_cell) and current_cell not in visited:
+                visited.append(current_cell)
                 distances[current_cell] = current_distance
                 for adjacent in self._state.get_valid_adjacent(current_cell):
                     remaining.appendleft((adjacent, current_distance + 1))
@@ -541,30 +537,27 @@ class Evaluation:
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
-            controlling_player = min(self._distances_by_player.keys(), key=lambda player : self._distances_by_player[player][cell])
+            controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell])
             self._voronoi[cell] = controlling_player
             self._controlled_by_player[controlling_player].append(cell)
 
-    def _voronoi_borders_for_player(self, player):
-        # à calculer durant voronoi, si a voisin de b, b voisin de a
-        borders=[]
-        for cell in self._controlled_by_player[player]:
-            adjacent_cells = self._state.get_valid_adjacent(cell)
-            for adjacent_cell in adjacent_cells:
-                neighbours=set()
-                controlling_player = self._voronoi[adjacent_cell]
-                if -1 != controlling_player != player:
-                    neighbours.add(controlling_player)
-                if neighbours:
-                    borders.append((cell, neighbours))
+            if self._state.is_valid_move(cell, D_UP):
+                top_cell = cell + D_UP
+                top_player = self._voronoi[top_cell]
+                if top_player != controlling_player:
+                    self._set_border(controlling_player, cell, top_player, top_cell)
+            if self._state.is_valid_move(cell, D_LEFT):
+                left_cell = cell + D_LEFT
+                left_player = self._voronoi[left_cell]
+                if left_player != controlling_player:
+                    self._set_border(controlling_player, cell, left_player, left_cell)
 
+    def _set_border(self, player_a, cell_a, player_b, cell_b):
+        border_a = self._borders.setdefault(player_a, {}).setdefault(cell_a, VoronoiBorder(player_a))
+        border_a.set(cell_b - cell_a, player_b)
 
-
-
-
-
-
-
+        border_b = self._borders.setdefault(player_b, {}).setdefault(cell_b, VoronoiBorder(player_b))
+        border_b.set(cell_a - cell_b, player_b)
 
 
 def voronoi(state: State) -> list[int]:
@@ -673,6 +666,11 @@ def game_loop():
 
         timer.reset()
         free_space_per_user = compute_free_space_per_user(me, turn, state)
+
+        # Evaluation(state).compute_all()
+
+        evaluate_for_player_durations.clear()
+
         if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
             debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one', LOG_INFO)
             direction = choose_minimax_one(me, state)
@@ -680,7 +678,12 @@ def game_loop():
             debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
             direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
 
-        debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}%)", LOG_WARN)
+        debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}% - free space per user = {free_space_per_user})", LOG_WARN)
+
+        debug(f"Nb of evaluate_for_player calls={len(evaluate_for_player_durations)}", LOG_INFO)
+        if len(evaluate_for_player_durations) > 1:
+            for index, quantile in enumerate(statistics.quantiles(evaluate_for_player_durations, n=10, method="inclusive")):
+                debug(f"evaluate_for_player - quantile {(index+1)*10:02d}% : {(quantile*1000):.3f} ms", LOG_INFO)
 
         print_direction(direction)
 
@@ -695,7 +698,7 @@ on_codingame='codemachine' in hostname
 
 if not on_codingame:
     debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
-    LOG_THRESHOLD=LOG_DEBUG
+    # LOG_THRESHOLD=LOG_DEBUG
     MAX_TIME=MAX_TIME * HOST_MALUS
 else:
     debug("On codingame, log lvl = INFO", LOG_INFO)
@@ -705,6 +708,6 @@ MAX_DEPTH = 4
 MAX_TIME_RATIO = 1
 MAX_ACCESSIBLE_COUNT = 50
 ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD=600
+FREE_SPACE_PER_USER_THRESHOLD=100
 
 game_loop()
