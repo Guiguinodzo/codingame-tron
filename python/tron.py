@@ -583,6 +583,7 @@ class Evaluation:
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
+            # TODO: prendre en compte l'ordre des joueurs pour la priorité!
             controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell])
             if self._distances_by_player[controlling_player][cell] == MAX_CELL:
                 continue
