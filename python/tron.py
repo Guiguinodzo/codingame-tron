@@ -30,6 +30,8 @@ H0ST_SCORE=1/190
 
 HOST_MALUS=CODINGAME_SCORE/H0ST_SCORE
 
+PAINT_ENABLED=False
+
 def debug(log, level=LOG_DEBUG):
     if level >= LOG_THRESHOLD:
         print(log, file=sys.stderr, flush=True)
@@ -39,6 +41,20 @@ def xy_to_cell(x, y):
 
 def cell_to_xy(cell):
     return (cell % WIDTH), int(cell / WIDTH)
+
+def paint(cell, color=None, text=None, group_id=None):
+    if not PAINT_ENABLED or (color is None and text is None):
+        return
+    x, y = cell_to_xy(cell)
+    command = f"#PAINT([{x},{y}]"
+    if color is not None:
+        command += f",color={color}"
+    if text is not None:
+        command += f",text=\"{text}\""
+    if group_id is not None:
+        command += f",group_id={group_id}"
+    command += ")"
+    print(command, file=sys.stderr)
 
 class Timer:
     start: float
@@ -489,6 +505,7 @@ class VoronoiBorder:
 class Evaluation:
     """ Stocke l'ensemble des évaluations faites sur un State """
 
+    _paths_by_player : dict[int, list[None|list[int]]]
     _distances_by_player : dict[int, list[int]]
     _voronoi : list[int]
     _controlled_by_player : dict[int, list[int]]
@@ -499,7 +516,17 @@ class Evaluation:
         self._distances_by_player = {}
         self._voronoi =[]
         self._controlled_by_player = {}
+        self._paths_by_player = {}
         self._borders = {}
+
+    def get_borders(self, player):
+        return self._borders[player] if player in self._borders else None
+
+    def get_distance_for_player(self, player, cell):
+        return self._distances_by_player[player][cell]
+
+    def get_path(self, player, cell):
+        return self._paths_by_player[player][cell]
 
     def compute_all(self):
         timer.start_step("evaluation.compute_all")
@@ -513,6 +540,7 @@ class Evaluation:
     def _compute_distance_for_all(self):
         for player in self._state.get_alive_players():
             self._compute_distances_for_player(player)
+            self._compute_path_for_player(player)
 
     def _compute_distances_for_player(self, player):
         distances = [MAX_CELL]*MAX_CELL
@@ -531,6 +559,24 @@ class Evaluation:
 
         self._distances_by_player[player] = distances
 
+    def _compute_path_for_player(self, player):
+        paths : list[None|list[int]] = [None]*MAX_CELL
+        origin = self._state.get_head(player)
+        paths[origin] = [origin]
+        remaining = deque()
+        for adjacent in self._state.get_valid_adjacent(origin):
+            remaining.appendleft((adjacent, [origin]))
+        visited = []
+        while remaining:
+            current_cell, path = remaining.pop()
+            if self._state.is_free(current_cell) and current_cell not in visited:
+                visited.append(current_cell)
+                paths[current_cell] = path + [current_cell]
+                for adjacent in self._state.get_valid_adjacent(current_cell):
+                    remaining.appendleft((adjacent, paths[current_cell]))
+
+        self._paths_by_player[player] = paths
+
     def _compute_voronoi(self):
         self._voronoi = [-1] * MAX_CELL
         self._controlled_by_player = {}
@@ -538,18 +584,20 @@ class Evaluation:
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
             controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell])
+            if self._distances_by_player[controlling_player][cell] == MAX_CELL:
+                continue
             self._voronoi[cell] = controlling_player
             self._controlled_by_player[controlling_player].append(cell)
 
             if self._state.is_valid_move(cell, D_UP):
                 top_cell = cell + D_UP
                 top_player = self._voronoi[top_cell]
-                if top_player != controlling_player:
+                if top_player != controlling_player and top_player >= 0:
                     self._set_border(controlling_player, cell, top_player, top_cell)
             if self._state.is_valid_move(cell, D_LEFT):
                 left_cell = cell + D_LEFT
                 left_player = self._voronoi[left_cell]
-                if left_player != controlling_player:
+                if left_player != controlling_player and left_player >= 0:
                     self._set_border(controlling_player, cell, left_player, left_cell)
 
     def _set_border(self, player_a, cell_a, player_b, cell_b):
@@ -558,6 +606,29 @@ class Evaluation:
 
         border_b = self._borders.setdefault(player_b, {}).setdefault(cell_b, VoronoiBorder(player_b))
         border_b.set(cell_a - cell_b, player_b)
+
+    def paint(self, group_id=None):
+        player_colors = ['#F52727', '#F5F527', '#27F5F5', '#2727F5']
+        player_border_colors = ['#F5278E', '#F58E27', '#27F58E', '#278EF5']
+        for cell in range(MAX_CELL):
+            player = self._voronoi[cell]
+            if player < 0:
+                continue
+            is_border = player in self._borders and cell in self._borders[player]
+            color = player_border_colors[player] if is_border else player_colors[player]
+            paint(cell, color, group_id=group_id)
+
+
+def choose_from_evalutation(me: int, evaluation: Evaluation) -> int | None :
+    borders = evaluation.get_borders(me)
+    if not borders:
+        return None
+    nearest_border = min(borders.keys(), key=lambda b: evaluation.get_distance_for_player(me, b))
+    path = evaluation.get_path(me, nearest_border)
+    # #C80969
+    player_destination_colors = ['#C80969', '#C86909', '#079C52', '#0969C8']
+    paint(nearest_border, player_destination_colors[me], "X")
+    return path[1] - path[0]
 
 
 def voronoi(state: State) -> list[int]:
@@ -667,16 +738,22 @@ def game_loop():
         timer.reset()
         free_space_per_user = compute_free_space_per_user(me, turn, state)
 
-        # Evaluation(state).compute_all()
+        evaluation = Evaluation(state)
+        evaluation.compute_all()
+        evaluation.paint()
+        from_evaluation = choose_from_evalutation(me, evaluation)
 
         evaluate_for_player_durations.clear()
-
-        if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
-            debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one', LOG_INFO)
-            direction = choose_minimax_one(me, state)
+        if not from_evaluation:
+            if free_space_per_user > FREE_SPACE_PER_USER_THRESHOLD:
+                debug(f'Over the free space per player threshold ({free_space_per_user}) : using minimax_one', LOG_INFO)
+                direction = choose_minimax_one(me, state)
+            else:
+                debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
+                direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
         else:
-            debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
-            direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
+            debug(f"Choosing from evaluation: {from_evaluation}", LOG_INFO)
+            direction = from_evaluation
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}% - free space per user = {free_space_per_user})", LOG_WARN)
 
@@ -700,6 +777,7 @@ if not on_codingame:
     debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
     # LOG_THRESHOLD=LOG_DEBUG
     MAX_TIME=MAX_TIME * HOST_MALUS
+    PAINT_ENABLED=True
 else:
     debug("On codingame, log lvl = INFO", LOG_INFO)
 
