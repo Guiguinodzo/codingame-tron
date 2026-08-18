@@ -57,28 +57,37 @@ def paint(cell, color=None, text=None, group_id=None):
     print(command, file=sys.stderr)
 
 class Timer:
-    start: float
-    steps: dict[str,float]
+    _start: float
+    _steps_duration: dict[str,float]
+    _steps_start: dict[str,float]
 
     def __init__(self):
-        self.start = time.time()
-        self.steps = {}
+        self._start = time.time()
+        self._steps_duration = {}
+        self._steps_start = {}
 
     def elapsed_time_ratio(self):
         return self.elapsed_time() / MAX_TIME  # max time = 100ms
 
     def elapsed_time(self):
         current_time = time.time()
-        return current_time - self.start
+        return current_time - self._start
 
     def reset(self):
-        self.start = time.time()
+        self._start = time.time()
 
     def start_step(self, step):
-        self.steps[step] = time.time()
+        self._steps_start[step] = time.time()
 
     def stop_step(self, step) -> float:
-        return time.time() - self.steps.pop(step)
+        duration = time.time() - self._steps_start[step]
+        self._steps_duration[step] = duration
+        return duration
+
+    def print_step(self, step, log_level = LOG_DEBUG):
+        duration = self._steps_duration[step]
+        debug(f'Duration for {step} : {duration*1000:.2f} (adjusted: {(duration/HOST_MALUS)*1000:.2f} ms)', log_level)
+
 
 timer = Timer()
 
@@ -500,8 +509,6 @@ class VoronoiBorder:
         elif direction == D_LEFT:
             self.left_player = player
 
-
-
 class Evaluation:
     """ Stocke l'ensemble des évaluations faites sur un State """
 
@@ -511,13 +518,19 @@ class Evaluation:
     _controlled_by_player : dict[int, list[int]]
     _borders : dict[int, dict[int, VoronoiBorder]] # by player by cell
 
-    def __init__(self, state: State):
+    def __init__(self, state: State, current_player: int):
         self._state = state
+        self._current_player = current_player
         self._distances_by_player = {}
         self._voronoi =[]
         self._controlled_by_player = {}
         self._paths_by_player = {}
         self._borders = {}
+        self._players_order = [
+            player_index - current_player if player_index >= current_player
+            else player_index + current_player
+            for player_index in range(4)
+        ]
 
     def get_borders(self, player):
         return self._borders[player] if player in self._borders else None
@@ -529,62 +542,61 @@ class Evaluation:
         return self._paths_by_player[player][cell]
 
     def compute_all(self):
-        timer.start_step("evaluation.compute_all")
+        step_compute_all = "evaluation.compute_all"
+        timer.start_step(step_compute_all)
 
         self._compute_distance_for_all()
         self._compute_voronoi()
 
-        elapsed_time = timer.stop_step("evaluation.compute_all")
-        debug(f"Evaluation.compute_all elapsed time: {elapsed_time*1000:.2f} ms (host-malus adjusted: {(elapsed_time/HOST_MALUS)*1000:.2f} ms)")
+        timer.stop_step(step_compute_all)
+        timer.print_step(step_compute_all)
 
     def _compute_distance_for_all(self):
         for player in self._state.get_alive_players():
-            self._compute_distances_for_player(player)
-            self._compute_path_for_player(player)
+            self._compute_distance_and_path_for_player(player)
 
-    def _compute_distances_for_player(self, player):
-        distances = [MAX_CELL]*MAX_CELL
-        origin = self._state.get_head(player)
-        remaining = deque()
-        for adjacent in self._state.get_valid_adjacent(origin):
-            remaining.appendleft((adjacent, 1))
-        visited = []
-        while remaining:
-            current_cell, current_distance = remaining.pop()
-            if self._state.is_free(current_cell) and current_cell not in visited:
-                visited.append(current_cell)
-                distances[current_cell] = current_distance
-                for adjacent in self._state.get_valid_adjacent(current_cell):
-                    remaining.appendleft((adjacent, current_distance + 1))
+    def _compute_distance_and_path_for_player(self, player):
+        step = f"evaluation.compute_distance_and_path_for_{player}"
+        timer.start_step(step)
 
-        self._distances_by_player[player] = distances
-
-    def _compute_path_for_player(self, player):
         paths : list[None|list[int]] = [None]*MAX_CELL
+        distances = [MAX_CELL]*MAX_CELL
+
         origin = self._state.get_head(player)
         paths[origin] = [origin]
         remaining = deque()
         for adjacent in self._state.get_valid_adjacent(origin):
-            remaining.appendleft((adjacent, [origin]))
-        visited = []
+            if self._state.is_free(adjacent):
+                remaining.appendleft((adjacent, [origin], 1))
+
+        visited = [False]*MAX_CELL
         while remaining:
-            current_cell, path = remaining.pop()
-            if self._state.is_free(current_cell) and current_cell not in visited:
-                visited.append(current_cell)
-                paths[current_cell] = path + [current_cell]
-                for adjacent in self._state.get_valid_adjacent(current_cell):
-                    remaining.appendleft((adjacent, paths[current_cell]))
+            current_cell, path, current_distance = remaining.pop()
+            if visited[current_cell]:
+                continue
+            visited[current_cell] = True
+            distances[current_cell] = current_distance
+            paths[current_cell] = path + [current_cell]
+            for adjacent in self._state.get_valid_adjacent(current_cell):
+                if self._state.is_free(adjacent) and not visited[adjacent]:
+                    remaining.appendleft((adjacent, paths[current_cell], current_distance + 1))
 
         self._paths_by_player[player] = paths
+        self._distances_by_player[player] = distances
+        timer.stop_step(step)
+        timer.print_step(step)
 
     def _compute_voronoi(self):
+        step = "evaluation.compute_voronoi"
+        timer.start_step(step)
+
         self._voronoi = [-1] * MAX_CELL
         self._controlled_by_player = {}
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
             # TODO: prendre en compte l'ordre des joueurs pour la priorité!
-            controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell])
+            controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell] * 10 + self._players_order[p])
             if self._distances_by_player[controlling_player][cell] == MAX_CELL:
                 continue
             self._voronoi[cell] = controlling_player
@@ -600,6 +612,9 @@ class Evaluation:
                 left_player = self._voronoi[left_cell]
                 if left_player != controlling_player and left_player >= 0:
                     self._set_border(controlling_player, cell, left_player, left_cell)
+
+        timer.stop_step(step)
+        timer.print_step(step)
 
     def _set_border(self, player_a, cell_a, player_b, cell_b):
         border_a = self._borders.setdefault(player_a, {}).setdefault(cell_a, VoronoiBorder(player_a))
@@ -620,7 +635,7 @@ class Evaluation:
             paint(cell, color, group_id=group_id)
 
 
-def choose_from_evalutation(me: int, evaluation: Evaluation) -> int | None :
+def choose_from_evaluation(me: int, evaluation: Evaluation) -> int | None :
     borders = evaluation.get_borders(me)
     if not borders:
         return None
@@ -640,7 +655,7 @@ def voronoi(state: State) -> list[int]:
     remaining = deque()
     for player, head in enumerate(state.heads):
         if head > -1:
-            for (player, adjacent) in [(player, adjacent) for adjacent in state.get_valid_adjacent(head)]:
+            for adjacent in state.get_valid_adjacent(head):
                 remaining.appendleft((player, adjacent))
 
     counters = [0]*state.nb_players
@@ -739,10 +754,10 @@ def game_loop():
         timer.reset()
         free_space_per_user = compute_free_space_per_user(me, turn, state)
 
-        evaluation = Evaluation(state)
+        evaluation = Evaluation(state, me)
         evaluation.compute_all()
         evaluation.paint()
-        from_evaluation = choose_from_evalutation(me, evaluation)
+        from_evaluation = choose_from_evaluation(me, evaluation)
 
         evaluate_for_player_durations.clear()
         if not from_evaluation:
@@ -753,7 +768,7 @@ def game_loop():
                 debug(f'Below the free space per player threshold ({free_space_per_user}) : using minimax', LOG_INFO)
                 direction = minimax(state, me, max_elapsed_time_ratio=MAX_TIME_RATIO, max_depth=MAX_DEPTH)
         else:
-            debug(f"Choosing from evaluation: {from_evaluation}", LOG_INFO)
+            debug(f"Choosing from evaluation: {direction_str(from_evaluation)}", LOG_INFO)
             direction = from_evaluation
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}% - free space per user = {free_space_per_user})", LOG_WARN)
@@ -776,7 +791,7 @@ on_codingame='codemachine' in hostname
 
 if not on_codingame:
     debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
-    # LOG_THRESHOLD=LOG_DEBUG
+    LOG_THRESHOLD=LOG_DEBUG
     MAX_TIME=MAX_TIME * HOST_MALUS
     PAINT_ENABLED=True
 else:
