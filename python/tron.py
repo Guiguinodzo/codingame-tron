@@ -52,7 +52,7 @@ def paint(cell, color=None, text=None, group_id=None):
     if text is not None:
         command += f",text=\"{text}\""
     if group_id is not None:
-        command += f",group_id={group_id}"
+        command += f",group={group_id}"
     command += ")"
     print(command, file=sys.stderr)
 
@@ -634,6 +634,18 @@ class Evaluation:
             color = player_border_colors[player] if is_border else player_colors[player]
             paint(cell, color, group_id=group_id)
 
+    def evaluate(self, player) -> tuple[int,int]:
+        voronoi_size = len(self._controlled_by_player[player])
+        min_border_distance = MAX_CELL
+        borders = self.get_borders(player)
+        if not borders:
+            return voronoi_size, MAX_CELL
+        for (border_cell, _) in borders.items():
+            distance = self.get_distance_for_player(player, border_cell)
+            if distance < min_border_distance:
+                min_border_distance = distance
+        return voronoi_size, min_border_distance
+
 
 def choose_from_evaluation(me: int, evaluation: Evaluation) -> int | None :
     borders = evaluation.get_borders(me)
@@ -715,6 +727,21 @@ def compute_free_space_per_user(me, turn, state):
 
     return ((WIDTH*HEIGHT) - nb_moves) / nb_alive
 
+def choose_based_on_evaluation(me: int, turn: int, state: State) -> int:
+    moves = state.get_valid_moves_for_player(me)
+
+    best_move = D_UP
+    best_voronoi_size, best_min_border_distance = 0, MAX_CELL
+    for move in moves:
+        state_with_player_move = state.with_player_move(me, move)
+        evaluation = Evaluation(state_with_player_move, me)
+        evaluation.compute_all()
+        evaluation.paint(direction_str(move))
+        voronoi_size, min_border_distance = evaluation.evaluate(me)
+        if voronoi_size > best_voronoi_size or (voronoi_size == best_voronoi_size and min_border_distance < best_min_border_distance):
+            best_voronoi_size, best_min_border_distance, best_move  = voronoi_size, min_border_distance, move
+
+    return best_move
 
 def game_loop():
 
@@ -754,10 +781,7 @@ def game_loop():
         timer.reset()
         free_space_per_user = compute_free_space_per_user(me, turn, state)
 
-        evaluation = Evaluation(state, me)
-        evaluation.compute_all()
-        evaluation.paint()
-        from_evaluation = choose_from_evaluation(me, evaluation)
+        from_evaluation = choose_based_on_evaluation(me, turn, state)
 
         evaluate_for_player_durations.clear()
         if not from_evaluation:
