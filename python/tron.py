@@ -276,22 +276,22 @@ class Evaluation:
         return self._paths_by_player[player][cell]
 
     def compute_all(self):
-        step_compute_all = "evaluation.compute_all"
-        timer.start_step(step_compute_all)
+        # step_compute_all = "evaluation.compute_all"
+        # timer.start_step(step_compute_all)
 
         self._compute_distance_for_all()
         self._compute_voronoi()
 
-        timer.stop_step(step_compute_all)
-        timer.print_step(step_compute_all)
+        # timer.stop_step(step_compute_all)
+        # timer.print_step(step_compute_all)
 
     def _compute_distance_for_all(self):
         for player in self._state.get_alive_players():
             self._compute_distance_and_path_for_player(player)
 
     def _compute_distance_and_path_for_player(self, player):
-        step = f"evaluation.compute_distance_and_path_for_{player}"
-        timer.start_step(step)
+        # step = f"evaluation.compute_distance_and_path_for_{player}"
+        # timer.start_step(step)
 
         paths : list[None|list[int]] = [None]*MAX_CELL
         distances = [MAX_CELL]*MAX_CELL
@@ -317,12 +317,12 @@ class Evaluation:
 
         self._paths_by_player[player] = paths
         self._distances_by_player[player] = distances
-        timer.stop_step(step)
-        timer.print_step(step)
+        # timer.stop_step(step)
+        # timer.print_step(step)
 
     def _compute_voronoi(self):
-        step = "evaluation.compute_voronoi"
-        timer.start_step(step)
+        # step = "evaluation.compute_voronoi"
+        # timer.start_step(step)
 
         self._voronoi = [-1] * MAX_CELL
         self._controlled_by_player = {}
@@ -347,8 +347,8 @@ class Evaluation:
                 if left_player != controlling_player and left_player >= 0:
                     self._set_border(controlling_player, cell, left_player, left_cell)
 
-        timer.stop_step(step)
-        timer.print_step(step)
+        # timer.stop_step(step)
+        # timer.print_step(step)
 
     def _set_border(self, player_a, cell_a, player_b, cell_b):
         border_a = self._borders.setdefault(player_a, {}).setdefault(cell_a, VoronoiBorder(player_a))
@@ -368,34 +368,54 @@ class Evaluation:
             color = player_border_colors[player] if is_border else player_colors[player]
             paint(cell, color, group_id=group_id)
 
-    def evaluate(self, player) -> tuple[int,int]:
-        voronoi_size = len(self._controlled_by_player[player])
+    def score(self, player) -> tuple[float,int]:
+        voronoi_score = reduce(
+            lambda score, voronoi_cell : score + 1,
+            # lambda score, voronoi_cell : score + MAX_CELL / self.get_distance_for_player(player, voronoi_cell),
+            self._controlled_by_player[player],
+            0.0
+        )
+
         min_border_distance = MAX_CELL
         borders = self.get_borders(player)
-        if not borders:
-            return voronoi_size, MAX_CELL
-        for (border_cell, _) in borders.items():
-            distance = self.get_distance_for_player(player, border_cell)
-            if distance < min_border_distance:
-                min_border_distance = distance
-        return voronoi_size, min_border_distance
+        if borders:
+            for (border_cell, _) in borders.items():
+                distance = self.get_distance_for_player(player, border_cell)
+                if distance < min_border_distance:
+                    min_border_distance = distance
+
+        return voronoi_score, min_border_distance
 
 
-def choose_based_on_evaluation(me: int, turn: int, state: State) -> int:
+def choose_based_on_evaluation(me: int, state: State, depth = 0, move_before = '') -> tuple[int, float, int]:
     moves = state.get_valid_moves_for_player(me)
 
     best_move = D_UP
-    best_voronoi_size, best_min_border_distance = 0, MAX_CELL
+    best_voronoi_score, best_min_border_distance = 0, MAX_CELL
     for move in moves:
-        state_with_player_move = state.with_player_move(me, move)
-        evaluation = Evaluation(state_with_player_move, me)
-        evaluation.compute_all()
-        evaluation.paint(direction_str(move))
-        voronoi_size, min_border_distance = evaluation.evaluate(me)
-        if voronoi_size > best_voronoi_size or (voronoi_size == best_voronoi_size and min_border_distance < best_min_border_distance):
-            best_voronoi_size, best_min_border_distance, best_move  = voronoi_size, min_border_distance, move
 
-    return best_move
+        if timer.elapsed_time_ratio() > 0.95:
+            break
+
+        state_with_player_move = state.with_player_move(me, move)
+
+        move_id = f'{move_before}{direction_str(move)}'
+        timer.start_step(move_id)
+        if depth == 0:
+            evaluation = Evaluation(state_with_player_move, me)
+            evaluation.compute_all()
+            evaluation.paint(direction_str(move))
+            voronoi_score, min_border_distance = evaluation.score(me)
+            evaluation.paint(move_id)
+        else:
+            _, voronoi_score, min_border_distance = choose_based_on_evaluation(me, state_with_player_move, depth - 1, f'{move_id}_')
+
+        if voronoi_score > best_voronoi_score or (voronoi_score == best_voronoi_score and min_border_distance < best_min_border_distance):
+            best_voronoi_score, best_min_border_distance, best_move  = voronoi_score, min_border_distance, move
+        timer.stop_step(move_id)
+        timer.print_step(move_id)
+
+    return best_move, best_voronoi_score, best_min_border_distance
 
 def game_loop():
 
@@ -434,7 +454,10 @@ def game_loop():
 
         timer.reset()
 
-        direction = choose_based_on_evaluation(me, turn, state)
+        if turn == 1:
+            direction = state.get_valid_moves_for_player(me)[0] # trop de directions possibles, on explose le temps d'éval
+        else:
+            direction, _, _ = choose_based_on_evaluation(me, state, depth=1)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}%)", LOG_WARN)
 
