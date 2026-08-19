@@ -393,15 +393,14 @@ def choose_based_on_evaluation(me: int, state: State, depth = 0, move_before = '
     best_move = D_UP
     best_voronoi_score, best_min_border_distance = -1.0, MAX_CELL
     for move in moves:
-
-        if timer.elapsed_time_ratio() > 0.95:
-            break
-
         state_with_player_move = state.with_player_move(me, move)
 
         move_id = f'{move_before}{direction_str(move)}'
         timer.start_step(move_id)
         if depth == 0:
+            if timer.elapsed_time_ratio() > 0.85:
+                debug(f'Time almost out: {timer.elapsed_time_ratio() *100:.2f} % ({timer.elapsed_time() * 1000:.2f} ms)', LOG_ERROR)
+                break
             evaluation = Evaluation(state_with_player_move, me)
             evaluation.compute_all()
             evaluation.paint(direction_str(move))
@@ -454,10 +453,7 @@ def game_loop():
 
         timer.reset()
 
-        if turn == 1:
-            direction = state.get_valid_moves_for_player(me)[0] # trop de directions possibles, on explose le temps d'éval
-        else:
-            direction, _, _ = choose_based_on_evaluation(me, state, depth=1)
+        direction, _, _ = choose_based_on_evaluation(me, state, depth=1)
 
         debug(f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}%)", LOG_WARN)
 
