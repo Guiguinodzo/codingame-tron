@@ -391,7 +391,7 @@ def choose_based_on_evaluation(me: int, state: State, depth = 0, move_before = '
     moves = state.get_valid_moves_for_player(me)
 
     best_move = D_UP
-    best_voronoi_score, best_min_border_distance = 0, MAX_CELL
+    best_voronoi_score, best_min_border_distance = -1.0, MAX_CELL
     for move in moves:
 
         if timer.elapsed_time_ratio() > 0.95:
