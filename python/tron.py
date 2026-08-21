@@ -105,12 +105,14 @@ class State:
     nb_players: int
     grid: list[int]
     heads: list[int]
+    last_move: list[int]
 
     def __init__(self, nb_players):
         self.nb_players = nb_players
 
         self.grid = [-1] * MAX_CELL
         self.heads = [-1] * self.nb_players
+        self.last_move = [0] * self.nb_players
 
     def get_cell(self, cell):
         return self.grid[cell]
@@ -128,10 +130,16 @@ class State:
         return self.heads[player]
 
     def set_head(self, player, cell):
+        previous_head = self.heads[player]
         self.heads[player] = cell
+        if previous_head != -1:
+            self.last_move[player] = self.heads[player] - previous_head
 
     def set_head_xy(self, player, x, y):
-        self.heads[player] = xy_to_cell(x, y)
+        self.set_head(player, xy_to_cell(x, y))
+
+    def get_last_move(self, player):
+        return self.last_move[player]
 
     def is_free(self, cell):
         return self.grid[cell] == -1
@@ -209,6 +217,8 @@ class State:
         new_player_head = self.get_head(player) + direction
         new.grid = self.grid[0:new_player_head] + [player] + self.grid[new_player_head + 1:]
         new.heads = self.heads[0:player] + [new_player_head] + self.heads[player + 1:]
+        new.last_move = self.last_move[:]
+        new.last_move[player] = direction
         return new
 
     def kill(self, player_to_kill):
@@ -216,12 +226,14 @@ class State:
         new.grid = [cell if cell != player_to_kill else -1 for cell in self.grid]
         new.heads = self.heads.copy()
         new.heads[player_to_kill] = -1
+        new.last_move = self.last_move[:]
         return new
 
     def copy(self):
         new = State(self.nb_players)
         new.grid = self.grid[:]
         new.heads = self.heads[:]
+        new.last_move = self.last_move[:]
         return new
 
 class VoronoiBorder:
@@ -329,8 +341,8 @@ class Evaluation:
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
-            # TODO: prendre en compte l'ordre des joueurs pour la priorité!
-            controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell] * 10 + self._players_order[p])
+            # TODO +1 aux adversaire pour compenser depth = 1 => à améliorer
+            controlling_player = min(self._distances_by_player.keys(), key=lambda p : self._distances_by_player[p][cell] * 10 + self._players_order[p] + (1 if self._current_player != player else 0))
             if self._distances_by_player[controlling_player][cell] == MAX_CELL:
                 continue
             self._voronoi[cell] = controlling_player
@@ -395,6 +407,23 @@ def choose_based_on_evaluation(me: int, state: State, depth = 0, move_before = '
     for move in moves:
         state_with_player_move = state.with_player_move(me, move)
 
+        for player_delta in range(1, state_with_player_move.nb_players):
+            player = (me + player_delta) % state_with_player_move.nb_players
+            if not state_with_player_move.is_player_alive(player):
+                continue
+            player_last_move = state_with_player_move.last_move[player]
+            debug(f'player {player} last move was {direction_str(player_last_move)}')
+            valid_moves_for_player = state_with_player_move.get_valid_moves_for_player(player)
+            if player_last_move in valid_moves_for_player:
+                debug(f'assume {player} keeps going {direction_str(player_last_move)}')
+                state_with_player_move = state_with_player_move.with_player_move(player, player_last_move)
+            elif valid_moves_for_player:
+                debug(f'default move for {player} is {direction_str(valid_moves_for_player[0])}')
+                state_with_player_move = state_with_player_move.with_player_move(player, valid_moves_for_player[0])
+            else:
+                debug(f'assume {player} dies')
+                state_with_player_move = state_with_player_move.kill(player)
+
         move_id = f'{move_before}{direction_str(move)}'
         timer.start_step(move_id)
         if depth == 0:
@@ -403,7 +432,6 @@ def choose_based_on_evaluation(me: int, state: State, depth = 0, move_before = '
                 break
             evaluation = Evaluation(state_with_player_move, me)
             evaluation.compute_all()
-            evaluation.paint(direction_str(move))
             voronoi_score, min_border_distance = evaluation.score(me)
             evaluation.paint(move_id)
         else:
