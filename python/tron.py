@@ -52,7 +52,7 @@ def xy_to_cell(x, y):
 def cell_to_xy(cell):
     return (cell % WIDTH), int(cell / WIDTH)
 
-def paint(cell, color=None, text=None, group_id=None):
+def paint(cell, color=None, text=None, text_color=None, group_id=None):
     if not PAINT_ENABLED or (color is None and text is None):
         return
     x, y = cell_to_xy(cell)
@@ -61,6 +61,8 @@ def paint(cell, color=None, text=None, group_id=None):
         command += f",color={color}"
     if text is not None:
         command += f",text=\"{text}\""
+    if text_color is not None:
+        command += f",text_color={text_color}"
     if group_id is not None:
         command += f",group={group_id}"
     command += ")"
@@ -277,6 +279,7 @@ class Evaluation:
             else player_index + current_player
             for player_index in range(4)
         ]
+        self._groups = [[-1]*MAX_CELL] * state.nb_players
 
     def get_borders(self, player):
         return self._borders[player] if player in self._borders else None
@@ -308,12 +311,28 @@ class Evaluation:
         paths : list[None|list[int]] = [None]*MAX_CELL
         distances = [MAX_CELL]*MAX_CELL
 
+        # TODO : grouper les cellules
+        # - pour une cellule
+        #   - verifier si voisine visited
+        #       - si 1 : groupe de cette cellule
+        #       - si 2+ : groupe cellule 1 + ajouter association de tous les groupes
+        #       - si 0 : nouveau groupe
+        # - structure donnée : groups = list[int] = -1 * MAX_CELL
+        #       - groups[id_group]=id_group
+        #       - groups[3]=3 => le group 3 existe (et commence par la cellule 3)
+        #       - groups[15]=5 => le group 15 doit être fusionné avec groupe 5
+        #       - groups[X]=-1 => pas un group
+        # - écrire n° group de chaque case à la fin
+        # - dans voronoi => faire aussi voronoi/group
+
         origin = self._state.get_head(player)
         paths[origin] = [origin]
         remaining = deque()
         for adjacent in self._state.get_valid_adjacent(origin):
             if self._state.is_free(adjacent):
                 remaining.appendleft((adjacent, [origin], 1))
+
+        self._groups[player] = [-1] * MAX_CELL
 
         visited = [False]*MAX_CELL
         while remaining:
@@ -323,9 +342,34 @@ class Evaluation:
             visited[current_cell] = True
             distances[current_cell] = current_distance
             paths[current_cell] = path + [current_cell]
+            adjacent_groups = [-1]*4
+            nb_adjacent_in_groups = 0
             for adjacent in self._state.get_valid_adjacent(current_cell):
                 if self._state.is_free(adjacent) and not visited[adjacent]:
                     remaining.appendleft((adjacent, paths[current_cell], current_distance + 1))
+                elif visited[adjacent] and self._groups[player][adjacent] != -1:
+                    adjacent_groups[nb_adjacent_in_groups] = self._groups[player][adjacent]
+                    nb_adjacent_in_groups += 1
+            if nb_adjacent_in_groups == 0:
+                self._groups[player][current_cell] = current_cell
+            elif nb_adjacent_in_groups == 1:
+                self._groups[player][current_cell] = adjacent_groups[0]
+            else:
+                self._groups[player][current_cell] = adjacent_groups[0]
+                for group_to_merge_idx in range(1, nb_adjacent_in_groups):
+                    self._groups[player][adjacent_groups[group_to_merge_idx]] = self._groups[player][current_cell]
+
+        timer.start_step("group_resolution")
+        for group_id in range(MAX_CELL):
+            if self._groups[player][group_id] != -1 or self._groups[player][group_id] == group_id:
+                continue
+            resolved_group_id = self._groups[player][group_id]
+            while self._groups[player][resolved_group_id] != resolved_group_id:
+                resolved_group_id = self._groups[player][resolved_group_id]
+            self._groups[player][group_id] = resolved_group_id
+        timer.stop_step("group_resolution")
+        timer.print_step("group_resolution")
+
 
         self._paths_by_player[player] = paths
         self._distances_by_player[player] = distances
@@ -372,13 +416,19 @@ class Evaluation:
     def paint(self, group_id=None):
         player_colors = ['#F52727', '#F5F527', '#27F5F5', '#2727F5']
         player_border_colors = ['#F5278E', '#F58E27', '#27F58E', '#278EF5']
+        player_text_colors = ['#000000', '#000000', '#000000', '#000000']
+
+        to_chr = lambda x : chr(ord('A')+(x//26))+chr(ord('A')+(x%26))
+
         for cell in range(MAX_CELL):
             player = self._voronoi[cell]
             if player < 0:
                 continue
             is_border = player in self._borders and cell in self._borders[player]
             color = player_border_colors[player] if is_border else player_colors[player]
-            paint(cell, color, group_id=group_id)
+            text = to_chr(self._groups[player][cell]) if self._groups[player][cell] != -1 else None
+            text_color = player_text_colors[player]
+            paint(cell, color=color, text=text, text_color=text_color, group_id=group_id)
 
     def score(self, player) -> tuple[float,int]:
         voronoi_score = reduce(
