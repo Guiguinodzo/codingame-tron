@@ -52,6 +52,9 @@ def xy_to_cell(x, y):
 def cell_to_xy(cell):
     return (cell % WIDTH), int(cell / WIDTH)
 
+def group_id_as_code(group_id) :
+    return chr(ord('A') + (group_id // 26))+chr(ord('A') + (group_id % 26))
+
 def paint(cell, color=None, text=None, text_color=None, group_id=None):
     if not PAINT_ENABLED or (color is None and text is None):
         return
@@ -355,18 +358,26 @@ class Evaluation:
             elif nb_adjacent_in_groups == 1:
                 self._groups[player][current_cell] = adjacent_groups[0]
             else:
-                self._groups[player][current_cell] = adjacent_groups[0]
-                for group_to_merge_idx in range(1, nb_adjacent_in_groups):
-                    self._groups[player][adjacent_groups[group_to_merge_idx]] = self._groups[player][current_cell]
+                lowest_group_id = min(adjacent_groups, key=lambda x : x if x != -1 else MAX_CELL)
+                self._groups[player][current_cell] = lowest_group_id
+                for group_to_merge_idx in range(0, nb_adjacent_in_groups):
+                    self._groups[player][adjacent_groups[group_to_merge_idx]] = lowest_group_id
 
         timer.start_step("group_resolution")
-        for group_id in range(MAX_CELL):
-            if self._groups[player][group_id] != -1 or self._groups[player][group_id] == group_id:
+        for cell in range(MAX_CELL):
+            if self._groups[player][cell] == -1 or self._groups[player][cell] == cell:
                 continue
-            resolved_group_id = self._groups[player][group_id]
+            resolution_iteration=0
+            resolved_group_id = self._groups[player][cell]
             while self._groups[player][resolved_group_id] != resolved_group_id:
-                resolved_group_id = self._groups[player][resolved_group_id]
-            self._groups[player][group_id] = resolved_group_id
+                new_resolved_group_id = self._groups[player][resolved_group_id]
+                debug(f"Group resolution iteration: {resolution_iteration} : {resolved_group_id} -> {new_resolved_group_id} "
+                      f"({group_id_as_code(resolved_group_id)} -> {group_id_as_code(new_resolved_group_id)})")
+                resolved_group_id = new_resolved_group_id
+                resolution_iteration += 1
+                if resolution_iteration > MAX_CELL:
+                    debug(f"Group {cell} resolution takes too long {resolution_iteration}", LOG_ERROR)
+            self._groups[player][cell] = resolved_group_id
         timer.stop_step("group_resolution")
         timer.print_step("group_resolution")
 
@@ -418,16 +429,14 @@ class Evaluation:
         player_border_colors = ['#F5278E', '#F58E27', '#27F58E', '#278EF5']
         player_text_colors = ['#000000', '#000000', '#000000', '#000000']
 
-        to_chr = lambda x : chr(ord('A')+(x//26))+chr(ord('A')+(x%26))
-
         for cell in range(MAX_CELL):
             player = self._voronoi[cell]
             if player < 0:
                 continue
             is_border = player in self._borders and cell in self._borders[player]
             color = player_border_colors[player] if is_border else player_colors[player]
-            text = to_chr(self._groups[player][cell]) if self._groups[player][cell] != -1 else None
-            text_color = player_text_colors[player]
+            text = group_id_as_code(self._groups[self._current_player][cell]) if self._groups[self._current_player][cell] != -1 else None
+            text_color = player_text_colors[self._current_player]
             paint(cell, color=color, text=text, text_color=text_color, group_id=group_id)
 
     def score(self, player) -> tuple[float,int]:
