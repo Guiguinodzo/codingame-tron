@@ -361,7 +361,10 @@ class Evaluation:
                 lowest_group_id = min(adjacent_groups, key=lambda x : x if x != -1 else MAX_CELL)
                 self._groups[player][current_cell] = lowest_group_id
                 for group_to_merge_idx in range(0, nb_adjacent_in_groups):
-                    self._groups[player][adjacent_groups[group_to_merge_idx]] = lowest_group_id
+                    group_id_of_adjacent = adjacent_groups[group_to_merge_idx]
+                    if group_id_of_adjacent == lowest_group_id:
+                        continue
+                    self._groups[player][group_id_of_adjacent] = lowest_group_id
 
         timer.start_step("group_resolution")
         for cell in range(MAX_CELL):

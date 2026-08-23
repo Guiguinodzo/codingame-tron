@@ -11,7 +11,7 @@ def cell_to_xy(cell):
 def print(cell_x, cell_y):
     for y in range(HEIGHT):
         for x in range(WIDTH):
-            sys.stdout.write(f"{'X' if (cell_x, cell_y) == (x, y) else '.sq'} ")
+            sys.stdout.write(f"{'X' if (cell_x, cell_y) == (x, y) else '.'} ")
         sys.stdout.write(f"\n")
 
 def __main__():
