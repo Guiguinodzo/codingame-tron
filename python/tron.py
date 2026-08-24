@@ -15,8 +15,6 @@ HEIGHT = 20
 WIDTH = 30
 MAX_CELL = HEIGHT * WIDTH
 
-MAX_SCORE = WIDTH * HEIGHT * 1001 + 1
-
 D_UP = -WIDTH
 D_DOWN = +WIDTH
 D_LEFT = -1
@@ -27,8 +25,6 @@ CODINGAME_SCORE = 1 / 250
 H0ST_SCORE = 1 / 190
 
 HOST_MALUS = CODINGAME_SCORE / H0ST_SCORE
-
-PAINT_ENABLED = False
 
 
 def print_direction(direction):
@@ -92,9 +88,15 @@ class Timer:
     def elapsed_time_ratio(self):
         return self.elapsed_time() / MAX_TIME  # max time = 100ms
 
-    def elapsed_time(self):
+    def elapsed_time(self) -> float:
         current_time = time.time()
         return current_time - self._start
+
+    def adjusted_elapsed_time_ratio(self):
+        return self.adjusted_elapsed_time() / MAX_TIME  # max time = 100ms
+
+    def adjusted_elapsed_time(self):
+        return self.elapsed_time() / HOST_MALUS
 
     def reset(self):
         self._start = time.time()
@@ -109,8 +111,22 @@ class Timer:
 
     def print_step(self, step, log_level=LOG_DEBUG):
         duration = self._steps_duration[step]
-        debug(f'Duration for {step} : {duration * 1000:.2f} (adjusted: {(duration / HOST_MALUS) * 1000:.2f} ms)',
-              log_level)
+
+        if PRINT_ADJUSTED:
+            debug(
+                f"Duration for {step} : {duration * 1000:.2f} ms - Adjusted : {(duration / HOST_MALUS) * 1000:.2f} ms",
+                log_level)
+        else:
+            debug(f'Duration for {step} : {duration * 1000:.2f} ms', log_level)
+
+    def print_elapsed(self, log_level=LOG_INFO):
+        elapsed_time: float = self.elapsed_time()
+        ratio: float = elapsed_time / MAX_TIME
+        adjusted_elapsed_time: float = elapsed_time / HOST_MALUS
+        adjusted_ratio: float = adjusted_elapsed_time / MAX_TIME
+        debug(f"Time: {elapsed_time * 1000:.3f} ms ({ratio * 100:.2f}%)", log_level)
+        if PRINT_ADJUSTED:
+            debug(f"Adjusted time: {adjusted_elapsed_time * 1000:.3f} ms ({adjusted_ratio * 100:.2f}%)", log_level)
 
 
 timer = Timer()
@@ -225,7 +241,7 @@ class State:
                 line += cell_str
             debug(line, log_level)
 
-    def with_player_move(self, player: int, direction: int) -> State:
+    def with_player_move(self, player: int, direction: int):
         new = State(self.nb_players)
 
         new_player_head = self.get_head(player) + direction
@@ -235,7 +251,7 @@ class State:
         new.last_move[player] = direction
         return new
 
-    def kill(self, player_to_kill: int) -> State:
+    def kill(self, player_to_kill: int):
         new = State(self.nb_players)
         new.grid = [cell if cell != player_to_kill else -1 for cell in self.grid]
         new.heads = self.heads.copy()
@@ -243,7 +259,7 @@ class State:
         new.last_move = self.last_move[:]
         return new
 
-    def copy(self) -> State:
+    def copy(self):
         new = State(self.nb_players)
         new.grid = self.grid[:]
         new.heads = self.heads[:]
@@ -301,6 +317,12 @@ class Evaluation:
     - and is adjacent to at least one cell controlled by another player"""
 
     _groups: list[list[int]]
+    """For each player, for each cell, the id of the group to which this cell belongs, -1 if none"""
+    _groups_ids: list[list[int]]
+    """For each player, the list of all its group's ids"""
+
+    _voronoi_count_by_player_by_group: list[list[int]]
+    """For each player, for each group, the count of cells controlled by that player"""
 
     def __init__(self, state: State, current_player: int):
         self._state = state
@@ -312,6 +334,8 @@ class Evaluation:
         self._borders = {}
         self._players_order = [(current_player + i) % state.nb_players for i in range(1, state.nb_players + 1)]
         self._groups = [[-1] * MAX_CELL] * state.nb_players
+        self._groups_ids = [[]] * state.nb_players
+        self._voronoi_count_by_player_by_group = [[]] * state.nb_players
 
     def get_borders(self, player: int) -> dict[int, VoronoiBorder] | None:
         return self._borders[player] if player in self._borders else None
@@ -404,22 +428,21 @@ class Evaluation:
         if groups_enabled:
             timer.start_step("group_resolution")
             for cell in range(MAX_CELL):
-                if self._groups[player][cell] == -1 or self._groups[player][cell] == cell:
+                if self._groups[player][cell] == -1:
                     continue
-                resolution_iteration = 0
+                elif self._groups[player][cell] == cell:
+                    self._groups_ids[player].append(cell)
+                    continue
+
                 resolved_group_id = self._groups[player][cell]
                 while self._groups[player][resolved_group_id] != resolved_group_id:
                     new_resolved_group_id = self._groups[player][resolved_group_id]
-                    debug(
-                        f"Group resolution iteration: {resolution_iteration} : {resolved_group_id} -> {new_resolved_group_id} "
-                        f"({group_id_as_code(resolved_group_id)} -> {group_id_as_code(new_resolved_group_id)})")
                     resolved_group_id = new_resolved_group_id
-                    resolution_iteration += 1
-                    if resolution_iteration > MAX_CELL:
-                        debug(f"Group {cell} resolution takes too long {resolution_iteration}", LOG_ERROR)
                 self._groups[player][cell] = resolved_group_id
             timer.stop_step("group_resolution")
             timer.print_step("group_resolution")
+            debug(f"Group resolution complete, {len(self._groups_ids[player])} group(s) detected")
+
         timer.stop_step(step)
         timer.print_step(step)
 
@@ -431,16 +454,25 @@ class Evaluation:
         self._controlled_by_player = {}
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
+
+        for player in range(self._state.nb_players):
+            self._voronoi_count_by_player_by_group[player] = [0] * len(self._groups_ids[player])
+
         for cell in range(MAX_CELL):
 
             controlling_player = min(self._distances_by_player.keys(),
                                      key=lambda p: self._distances_by_player[p][cell] * 10 + self._players_order[p]
-                                                   # + (1 if self._current_player != player else 0) # TODO +1 aux adversaire pour compenser depth = 1 => à améliorer
+                                     # + (1 if self._current_player != player else 0) # TODO +1 aux adversaire pour compenser depth = 1 => à améliorer
                                      )
             if self._distances_by_player[controlling_player][cell] == MAX_CELL:
                 continue
             self._voronoi[cell] = controlling_player
             self._controlled_by_player[controlling_player].append(cell)
+
+            if self._current_player == controlling_player:  # only for current player for which groups are enabled
+                cell_group_id = self._groups[controlling_player][cell]
+                group_index = self._groups_ids[controlling_player].index(cell_group_id)
+                self._voronoi_count_by_player_by_group[controlling_player][group_index] += 1
 
             if self._state.is_valid_move(cell, D_UP):
                 top_cell = cell + D_UP
@@ -479,13 +511,16 @@ class Evaluation:
             text_color = player_text_colors[self._current_player]
             paint(cell, color=color, text=text, text_color=text_color, group_id=group_id)
 
-    def score(self, player) -> tuple[float, int]:
-        voronoi_score = reduce(
-            lambda score, voronoi_cell: score + 1,
-            # lambda score, voronoi_cell : score + MAX_CELL / self.get_distance_for_player(player, voronoi_cell),
-            self._controlled_by_player[player],
-            0.0
-        )
+    def score(self, player: int) -> tuple[float, int]:
+        # voronoi_score = reduce(
+        #     lambda score, voronoi_cell: score + 1,
+        #     # lambda score, voronoi_cell : score + MAX_CELL / self.get_distance_for_player(player, voronoi_cell),
+        #     self._controlled_by_player[player],
+        #     0.0
+        # )
+
+        voronoi_count_by_group = self._voronoi_count_by_player_by_group[player]
+        voronoi_score: float = float(max(voronoi_count_by_group)) if len(voronoi_count_by_group) > 0 else 0
 
         min_border_distance = MAX_CELL
         borders = self.get_borders(player)
@@ -526,13 +561,12 @@ def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -
         move_id = f'{move_before}{direction_str(move)}'
         timer.start_step(move_id)
         if depth == 0:
-            if timer.elapsed_time_ratio() > 0.85:
-                debug(
-                    f'Time almost out: {timer.elapsed_time_ratio() * 100:.2f} % ({timer.elapsed_time() * 1000:.2f} ms)',
-                    LOG_ERROR)
+            if TIME_CUTOFF and timer.elapsed_time_ratio() > 0.85:
+                debug(f'Time almost out: {timer.elapsed_time_ratio() * 100:.2f} % '
+                      f'({timer.elapsed_time() * 1000:.2f} ms)', LOG_ERROR)
                 break
             evaluation = Evaluation(state_with_player_move, me)
-            evaluation.compute_all()
+            evaluation.compute_all(move_id)
             voronoi_score, min_border_distance = evaluation.score(me)
             evaluation.paint(move_id)
         else:
@@ -583,11 +617,17 @@ def game_loop():
 
         timer.reset()
 
-        direction, _, _ = choose_based_on_evaluation(me, state, depth=1)
+        direction, _, _ = choose_based_on_evaluation(me, state, depth=DEPTH)
 
-        debug(
-            f"Going {direction_str(direction)} (time: {((timer.elapsed_time()) * 1000):.3f} ms = {timer.elapsed_time_ratio() * 100:.2f}%)",
-            LOG_WARN)
+        moves_for_player = state.get_valid_moves_for_player(me)
+
+        if moves_for_player and direction not in moves_for_player:
+            debug(f"Move {direction_str(direction)} is not valid, picking {direction_str(moves_for_player[0])} out of "
+                  f"{[direction_str(m) for m in moves_for_player]}", LOG_WARN)
+            direction = moves_for_player[0]
+
+        timer.print_elapsed()
+        debug(f"Going {direction_str(direction)}\n", LOG_INFO)
 
         print_direction(direction)
 
@@ -606,16 +646,15 @@ on_codingame = 'codemachine' in hostname
 if not on_codingame:
     debug("Not on codingame: set log lvl to DEBUG", LOG_INFO)
     LOG_THRESHOLD = LOG_DEBUG
-    MAX_TIME = MAX_TIME * HOST_MALUS
     PAINT_ENABLED = True
+    PRINT_ADJUSTED = True
+    TIME_CUTOFF = False
+    DEPTH=2
 else:
     debug("On codingame, log lvl = INFO", LOG_INFO)
-
-# config
-MAX_DEPTH = 4
-MAX_TIME_RATIO = 1
-MAX_ACCESSIBLE_COUNT = 50
-ERROR_SCORE = -999999
-FREE_SPACE_PER_USER_THRESHOLD = 100
+    PRINT_ADJUSTED = False
+    PAINT_ENABLED = False
+    TIME_CUTOFF = True
+    DEPTH=1
 
 game_loop()
