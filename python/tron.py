@@ -276,13 +276,31 @@ class VoronoiBorder:
 
 
 class Evaluation:
-    """ Stocke l'ensemble des évaluations faites sur un State """
+    """ Computes and stores a complete evaluation of a State """
+    _current_player: int
+    """ Player for which the State is evaluated, usually the player that moved last in this State"""
+
+    _players_order: list[int]
+    """Sorted list of players in order of turn. _played_order[0] is the next player"""
 
     _paths_by_player: dict[int, list[None | list[int]]]
+    """For each player, for each cell, the list of cells to be visited in order for that player to reach that cell"""
+
     _distances_by_player: dict[int, list[int]]
+    """For each player, for each cell, the shortest path's length to that cell"""
+
     _voronoi: list[int]
+    """For each cell, the id of the nearest player"""
+
     _controlled_by_player: dict[int, list[int]]
+    """For each player, the list of cell that player is the nearest to"""
+
     _borders: dict[int, dict[int, VoronoiBorder]]  # by player by cell
+    """For each player, for each cell, the list of cells that :
+    - is controlled by that player 
+    - and is adjacent to at least one cell controlled by another player"""
+
+    _groups: list[list[int]]
 
     def __init__(self, state: State, current_player: int):
         self._state = state
@@ -292,11 +310,7 @@ class Evaluation:
         self._controlled_by_player = {}
         self._paths_by_player = {}
         self._borders = {}
-        self._players_order = [
-            player_index - current_player if player_index >= current_player
-            else player_index + current_player
-            for player_index in range(4)
-        ]
+        self._players_order = [(current_player + i) % state.nb_players for i in range(1, state.nb_players + 1)]
         self._groups = [[-1] * MAX_CELL] * state.nb_players
 
     def get_borders(self, player: int) -> dict[int, VoronoiBorder] | None:
@@ -308,26 +322,28 @@ class Evaluation:
     def get_path(self, player: int, cell: int) -> list[int] | None:
         return self._paths_by_player[player][cell]
 
-    def compute_all(self):
-        # step_compute_all = "evaluation.compute_all"
-        # timer.start_step(step_compute_all)
+    def compute_all(self, evaluation_id: str = "default"):
+        step_compute_all = f"evaluation.compute_all_{evaluation_id}"
+        timer.start_step(step_compute_all)
 
         self._compute_distance_for_all()
         self._compute_voronoi()
 
-        # timer.stop_step(step_compute_all)
-        # timer.print_step(step_compute_all)
+        timer.stop_step(step_compute_all)
+        timer.print_step(step_compute_all)
 
     def _compute_distance_for_all(self):
         for player in self._state.get_alive_players():
             self._compute_distance_and_path_for_player(player)
 
     def _compute_distance_and_path_for_player(self, player: int):
-        # step = f"evaluation.compute_distance_and_path_for_{player}"
-        # timer.start_step(step)
+        step = f"evaluation.compute_distance_and_path_for_{player}"
+        timer.start_step(step)
 
         paths: list[None | list[int]] = [None] * MAX_CELL
         distances = [MAX_CELL] * MAX_CELL
+
+        groups_enabled = self._current_player == player
 
         # TODO : grouper les cellules
         # - pour une cellule
@@ -360,64 +376,67 @@ class Evaluation:
             visited[current_cell] = True
             distances[current_cell] = current_distance
             paths[current_cell] = path + [current_cell]
-            adjacent_groups = [-1] * 4
+            adjacent_groups = [-1] * 4 if groups_enabled else []
             nb_adjacent_in_groups = 0
             for adjacent in self._state.get_valid_adjacent(current_cell):
                 if self._state.is_free(adjacent) and not visited[adjacent]:
                     remaining.appendleft((adjacent, paths[current_cell], current_distance + 1))
-                elif visited[adjacent] and self._groups[player][adjacent] != -1:
+                elif groups_enabled and visited[adjacent] and self._groups[player][adjacent] != -1:
                     adjacent_groups[nb_adjacent_in_groups] = self._groups[player][adjacent]
                     nb_adjacent_in_groups += 1
-            if nb_adjacent_in_groups == 0:
-                self._groups[player][current_cell] = current_cell
-            elif nb_adjacent_in_groups == 1:
-                self._groups[player][current_cell] = adjacent_groups[0]
-            else:
-                lowest_group_id = min(adjacent_groups, key=lambda x: x if x != -1 else MAX_CELL)
-                self._groups[player][current_cell] = lowest_group_id
-                for group_to_merge_idx in range(0, nb_adjacent_in_groups):
-                    group_id_of_adjacent = adjacent_groups[group_to_merge_idx]
-                    if group_id_of_adjacent == lowest_group_id:
-                        continue
-                    self._groups[player][group_id_of_adjacent] = lowest_group_id
 
-        timer.start_step("group_resolution")
-        for cell in range(MAX_CELL):
-            if self._groups[player][cell] == -1 or self._groups[player][cell] == cell:
-                continue
-            resolution_iteration = 0
-            resolved_group_id = self._groups[player][cell]
-            while self._groups[player][resolved_group_id] != resolved_group_id:
-                new_resolved_group_id = self._groups[player][resolved_group_id]
-                debug(
-                    f"Group resolution iteration: {resolution_iteration} : {resolved_group_id} -> {new_resolved_group_id} "
-                    f"({group_id_as_code(resolved_group_id)} -> {group_id_as_code(new_resolved_group_id)})")
-                resolved_group_id = new_resolved_group_id
-                resolution_iteration += 1
-                if resolution_iteration > MAX_CELL:
-                    debug(f"Group {cell} resolution takes too long {resolution_iteration}", LOG_ERROR)
-            self._groups[player][cell] = resolved_group_id
-        timer.stop_step("group_resolution")
-        timer.print_step("group_resolution")
-
+            if groups_enabled:
+                if nb_adjacent_in_groups == 0:
+                    self._groups[player][current_cell] = current_cell
+                elif nb_adjacent_in_groups == 1:
+                    self._groups[player][current_cell] = adjacent_groups[0]
+                else:
+                    lowest_group_id = min(adjacent_groups, key=lambda x: x if x != -1 else MAX_CELL)
+                    self._groups[player][current_cell] = lowest_group_id
+                    for group_to_merge_idx in range(0, nb_adjacent_in_groups):
+                        group_id_of_adjacent = adjacent_groups[group_to_merge_idx]
+                        if group_id_of_adjacent == lowest_group_id:
+                            continue
+                        self._groups[player][group_id_of_adjacent] = lowest_group_id
         self._paths_by_player[player] = paths
         self._distances_by_player[player] = distances
-        # timer.stop_step(step)
-        # timer.print_step(step)
+
+        if groups_enabled:
+            timer.start_step("group_resolution")
+            for cell in range(MAX_CELL):
+                if self._groups[player][cell] == -1 or self._groups[player][cell] == cell:
+                    continue
+                resolution_iteration = 0
+                resolved_group_id = self._groups[player][cell]
+                while self._groups[player][resolved_group_id] != resolved_group_id:
+                    new_resolved_group_id = self._groups[player][resolved_group_id]
+                    debug(
+                        f"Group resolution iteration: {resolution_iteration} : {resolved_group_id} -> {new_resolved_group_id} "
+                        f"({group_id_as_code(resolved_group_id)} -> {group_id_as_code(new_resolved_group_id)})")
+                    resolved_group_id = new_resolved_group_id
+                    resolution_iteration += 1
+                    if resolution_iteration > MAX_CELL:
+                        debug(f"Group {cell} resolution takes too long {resolution_iteration}", LOG_ERROR)
+                self._groups[player][cell] = resolved_group_id
+            timer.stop_step("group_resolution")
+            timer.print_step("group_resolution")
+        timer.stop_step(step)
+        timer.print_step(step)
 
     def _compute_voronoi(self):
-        # step = "evaluation.compute_voronoi"
-        # timer.start_step(step)
+        step = "evaluation.compute_voronoi"
+        timer.start_step(step)
 
         self._voronoi = [-1] * MAX_CELL
         self._controlled_by_player = {}
         for player in self._state.get_alive_players():
             self._controlled_by_player[player] = []
         for cell in range(MAX_CELL):
-            # TODO +1 aux adversaire pour compenser depth = 1 => à améliorer
+
             controlling_player = min(self._distances_by_player.keys(),
-                                     key=lambda p: self._distances_by_player[p][cell] * 10 + self._players_order[p] + (
-                                         1 if self._current_player != player else 0))
+                                     key=lambda p: self._distances_by_player[p][cell] * 10 + self._players_order[p]
+                                                   # + (1 if self._current_player != player else 0) # TODO +1 aux adversaire pour compenser depth = 1 => à améliorer
+                                     )
             if self._distances_by_player[controlling_player][cell] == MAX_CELL:
                 continue
             self._voronoi[cell] = controlling_player
@@ -434,8 +453,8 @@ class Evaluation:
                 if left_player != controlling_player and left_player >= 0:
                     self._set_border(controlling_player, cell, left_player, left_cell)
 
-        # timer.stop_step(step)
-        # timer.print_step(step)
+        timer.stop_step(step)
+        timer.print_step(step)
 
     def _set_border(self, player_a, cell_a, player_b, cell_b):
         border_a = self._borders.setdefault(player_a, {}).setdefault(cell_a, VoronoiBorder(player_a))
