@@ -175,6 +175,9 @@ class State:
     def is_free(self, cell: int) -> bool:
         return self.grid[cell] == -1
 
+    def count_free_cells(self) -> int:
+        return reduce(lambda count, cell : count + 1 if cell == -1 else count, self.grid, 0)
+
     def is_valid_move(self, origin: int, direction: int) -> bool:
         target = origin + direction
         if not (0 <= target < MAX_CELL):
@@ -617,7 +620,12 @@ def game_loop():
 
         timer.reset()
 
-        direction, _, _ = choose_based_on_evaluation(me, state, depth=DEPTH)
+        free_cells = state.count_free_cells()
+        debug(f"Free cell count: {free_cells}") # 350 > depth 2 OK
+
+        depth = 1 if free_cells > 350 else 2
+
+        direction, _, _ = choose_based_on_evaluation(me, state, depth)
 
         moves_for_player = state.get_valid_moves_for_player(me)
 
@@ -628,6 +636,9 @@ def game_loop():
 
         timer.print_elapsed()
         debug(f"Going {direction_str(direction)}\n", LOG_INFO)
+
+        # le simulateur va attendre ce log
+        debug("END_OF_LOGS", LOG_INFO)
 
         print_direction(direction)
 
