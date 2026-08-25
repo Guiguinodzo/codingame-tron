@@ -333,6 +333,8 @@ class Evaluation:
     _free_adjacent_count_by_player: list[list[int]]
     """For each player, for each cell, the number of free adjacent cells"""
 
+    _score : list[int|float] | None = None
+
     def __init__(self, state: State, current_player: int):
         self._state = state
         self._current_player = current_player
@@ -530,12 +532,17 @@ class Evaluation:
             paint(cell, color=color, text=text, text_color=text_color, group_id=group_id)
 
     def score(self, player: int) -> list[float |int]:
+
+        if self._score:
+            return self._score
+
         # voronoi_score = reduce(
         #     lambda score, voronoi_cell: score + 1,
         #     # lambda score, voronoi_cell : score + MAX_CELL / self.get_distance_for_player(player, voronoi_cell),
         #     self._controlled_by_player[player],
         #     0.0
         # )
+
 
         voronoi_count_by_group = self._voronoi_count_by_player_by_group[player]
         voronoi_score = max(voronoi_count_by_group) if len(voronoi_count_by_group) > 0 else 0
@@ -551,7 +558,9 @@ class Evaluation:
                 if distance < min_border_distance:
                     min_border_distance = distance
 
-        return [voronoi_score, voronoi_adjacent_count_score, -1 * min_border_distance]
+        self._score = [voronoi_score, voronoi_adjacent_count_score, -1 * min_border_distance]
+
+        return self._score
 
     def is_better(self, player, other) -> bool:
         other_score = other.score(self._current_player)
