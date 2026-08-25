@@ -323,9 +323,15 @@ class Evaluation:
     """For each player, for each cell, the id of the group to which this cell belongs, -1 if none"""
     _groups_ids: list[list[int]]
     """For each player, the list of all its group's ids"""
+    _group_size: list[list[int]]
 
     _voronoi_count_by_player_by_group: list[list[int]]
     """For each player, for each group, the count of cells controlled by that player"""
+    _voronoi_adjacent_count_by_player_by_group: list[list[int]]
+    """For each player, for each group, the sum of adjacent free cells count of cells controlled by that player"""
+
+    _free_adjacent_count_by_player: list[list[int]]
+    """For each player, for each cell, the number of free adjacent cells"""
 
     def __init__(self, state: State, current_player: int):
         self._state = state
@@ -339,6 +345,8 @@ class Evaluation:
         self._groups = [[-1] * MAX_CELL] * state.nb_players
         self._groups_ids = [[]] * state.nb_players
         self._voronoi_count_by_player_by_group = [[]] * state.nb_players
+        self._voronoi_adjacent_count_by_player_by_group = [[]] * state.nb_players
+        self._free_adjacent_count_by_player = [[0]*MAX_CELL] * state.nb_players
 
     def get_borders(self, player: int) -> dict[int, VoronoiBorder] | None:
         return self._borders[player] if player in self._borders else None
@@ -394,6 +402,7 @@ class Evaluation:
                 remaining.appendleft((adjacent, [origin], 1))
 
         self._groups[player] = [-1] * MAX_CELL
+        self._group_size = [[0]*MAX_CELL] * self._state.nb_players
 
         visited = [False] * MAX_CELL
         while remaining:
@@ -405,8 +414,10 @@ class Evaluation:
             paths[current_cell] = path + [current_cell]
             adjacent_groups = [-1] * 4 if groups_enabled else []
             nb_adjacent_in_groups = 0
-            for adjacent in self._state.get_valid_adjacent(current_cell):
-                if self._state.is_free(adjacent) and not visited[adjacent]:
+            valid_adjacent_cells = self._state.get_valid_adjacent(current_cell)
+            self._free_adjacent_count_by_player[player][current_cell] = len(valid_adjacent_cells)
+            for adjacent in valid_adjacent_cells:
+                if not visited[adjacent]:
                     remaining.appendleft((adjacent, paths[current_cell], current_distance + 1))
                 elif groups_enabled and visited[adjacent] and self._groups[player][adjacent] != -1:
                     adjacent_groups[nb_adjacent_in_groups] = self._groups[player][adjacent]
@@ -435,6 +446,7 @@ class Evaluation:
                     continue
                 elif self._groups[player][cell] == cell:
                     self._groups_ids[player].append(cell)
+                    self._group_size[player][cell] += 1
                     continue
 
                 resolved_group_id = self._groups[player][cell]
@@ -442,6 +454,7 @@ class Evaluation:
                     new_resolved_group_id = self._groups[player][resolved_group_id]
                     resolved_group_id = new_resolved_group_id
                 self._groups[player][cell] = resolved_group_id
+                self._group_size[player][resolved_group_id] += 1
             timer.stop_step("group_resolution")
             timer.print_step("group_resolution")
             debug(f"Group resolution complete, {len(self._groups_ids[player])} group(s) detected")
@@ -460,6 +473,7 @@ class Evaluation:
 
         for player in range(self._state.nb_players):
             self._voronoi_count_by_player_by_group[player] = [0] * len(self._groups_ids[player])
+            self._voronoi_adjacent_count_by_player_by_group[player] = [0] * len(self._groups_ids[player])
 
         for cell in range(MAX_CELL):
 
@@ -476,6 +490,7 @@ class Evaluation:
                 cell_group_id = self._groups[controlling_player][cell]
                 group_index = self._groups_ids[controlling_player].index(cell_group_id)
                 self._voronoi_count_by_player_by_group[controlling_player][group_index] += 1
+                self._voronoi_adjacent_count_by_player_by_group[controlling_player][group_index] += self._free_adjacent_count_by_player[controlling_player][cell]
 
             if self._state.is_valid_move(cell, D_UP):
                 top_cell = cell + D_UP
@@ -514,7 +529,7 @@ class Evaluation:
             text_color = player_text_colors[self._current_player]
             paint(cell, color=color, text=text, text_color=text_color, group_id=group_id)
 
-    def score(self, player: int) -> tuple[float, int]:
+    def score(self, player: int) -> list[float |int]:
         # voronoi_score = reduce(
         #     lambda score, voronoi_cell: score + 1,
         #     # lambda score, voronoi_cell : score + MAX_CELL / self.get_distance_for_player(player, voronoi_cell),
@@ -523,7 +538,10 @@ class Evaluation:
         # )
 
         voronoi_count_by_group = self._voronoi_count_by_player_by_group[player]
-        voronoi_score: float = float(max(voronoi_count_by_group)) if len(voronoi_count_by_group) > 0 else 0
+        voronoi_score = max(voronoi_count_by_group) if len(voronoi_count_by_group) > 0 else 0
+
+        voronoi_adjacent_count_by_group = self._voronoi_adjacent_count_by_player_by_group[player]
+        voronoi_adjacent_count_score = max(voronoi_adjacent_count_by_group) if len(voronoi_adjacent_count_by_group) > 0 else 0
 
         min_border_distance = MAX_CELL
         borders = self.get_borders(player)
@@ -533,14 +551,19 @@ class Evaluation:
                 if distance < min_border_distance:
                     min_border_distance = distance
 
-        return voronoi_score, min_border_distance
+        return [voronoi_score, voronoi_adjacent_count_score, -1 * min_border_distance]
+
+    def is_better(self, player, other) -> bool:
+        other_score = other.score(self._current_player)
+
+        return self.score(player) > other_score
 
 
-def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -> tuple[int, float, int]:
+def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -> tuple[int, Evaluation | None]:
     moves = state.get_valid_moves_for_player(me)
 
     best_move = D_UP
-    best_voronoi_score, best_min_border_distance = -1.0, MAX_CELL
+    best_evaluation = None
     for move in moves:
         state_with_player_move = state.with_player_move(me, move)
 
@@ -570,19 +593,17 @@ def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -
                 break
             evaluation = Evaluation(state_with_player_move, me)
             evaluation.compute_all(move_id)
-            voronoi_score, min_border_distance = evaluation.score(me)
             evaluation.paint(move_id)
         else:
-            _, voronoi_score, min_border_distance = choose_based_on_evaluation(me, state_with_player_move, depth - 1,
+            _, evaluation = choose_based_on_evaluation(me, state_with_player_move, depth - 1,
                                                                                f'{move_id}_')
 
-        if voronoi_score > best_voronoi_score or (
-                voronoi_score == best_voronoi_score and min_border_distance < best_min_border_distance):
-            best_voronoi_score, best_min_border_distance, best_move = voronoi_score, min_border_distance, move
+        if not best_evaluation or (evaluation and evaluation.is_better(me, best_evaluation)):
+            best_move, best_evaluation = move, evaluation
         timer.stop_step(move_id)
         timer.print_step(move_id)
 
-    return best_move, best_voronoi_score, best_min_border_distance
+    return best_move, best_evaluation
 
 
 def game_loop():
@@ -625,7 +646,7 @@ def game_loop():
 
         depth = 1 if free_cells > 350 else 2
 
-        direction, _, _ = choose_based_on_evaluation(me, state, depth)
+        direction, _ = choose_based_on_evaluation(me, state, depth)
 
         moves_for_player = state.get_valid_moves_for_player(me)
 
