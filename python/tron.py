@@ -543,9 +543,24 @@ class Evaluation:
         #     0.0
         # )
 
+        # Idée d'amélioration
+        # - En 1v1, si voronoi < à celui de l'adversaire (on va perdre) : viser le plus grand espace sans prendre en compte voronoi
+        # - comparer voronoi(me) vs max(voronoi(e IN enemi))
 
         voronoi_count_by_group = self._voronoi_count_by_player_by_group[player]
         voronoi_score = max(voronoi_count_by_group) if len(voronoi_count_by_group) > 0 else 0
+
+
+        # max_other_player_voronoi_score = -1
+        # for other_player in range(self._state.nb_players):
+        #     if other_player == player:
+        #         continue
+        #     other_player_voronoi_count_by_group = self._voronoi_count_by_player_by_group[other_player]
+        #     other_player_voronoi_score = max(other_player_voronoi_count_by_group) if len(other_player_voronoi_count_by_group) > 0 else 0
+        #     if other_player_voronoi_score > max_other_player_voronoi_score:
+        #         max_other_player_voronoi_score = other_player_voronoi_score
+        #
+        # delta_voronoi = voronoi_score - max_other_player_voronoi_score
 
         voronoi_adjacent_count_by_group = self._voronoi_adjacent_count_by_player_by_group[player]
         voronoi_adjacent_count_score = max(voronoi_adjacent_count_by_group) if len(voronoi_adjacent_count_by_group) > 0 else 0
@@ -558,7 +573,7 @@ class Evaluation:
                 if distance < min_border_distance:
                     min_border_distance = distance
 
-        self._score = [voronoi_score, voronoi_adjacent_count_score, -1 * min_border_distance]
+        self._score = [ voronoi_score, voronoi_adjacent_count_score, -1 * min_border_distance]
 
         return self._score
 
@@ -580,18 +595,7 @@ def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -
             player = (me + player_delta) % state_with_player_move.nb_players
             if not state_with_player_move.is_player_alive(player):
                 continue
-            player_last_move = state_with_player_move.last_move[player]
-            debug(f'player {player} last move was {direction_str(player_last_move)}')
-            valid_moves_for_player = state_with_player_move.get_valid_moves_for_player(player)
-            if player_last_move in valid_moves_for_player:
-                debug(f'assume {player} keeps going {direction_str(player_last_move)}')
-                state_with_player_move = state_with_player_move.with_player_move(player, player_last_move)
-            elif valid_moves_for_player:
-                debug(f'default move for {player} is {direction_str(valid_moves_for_player[0])}')
-                state_with_player_move = state_with_player_move.with_player_move(player, valid_moves_for_player[0])
-            else:
-                debug(f'assume {player} dies')
-                state_with_player_move = state_with_player_move.kill(player)
+            state_with_player_move = guess_player_next_move(player, state_with_player_move)
 
         move_id = f'{move_before}{direction_str(move)}'
         timer.start_step(move_id)
@@ -608,12 +612,52 @@ def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -
                                                                                f'{move_id}_')
 
         if not best_evaluation or (evaluation and evaluation.is_better(me, best_evaluation)):
+            debug(f'Evaluation for {move_before}{direction_str(move)} ({evaluation.score(me) if evaluation else "None"}) is better '
+                  f'than for {move_before}{direction_str(best_move)} ({best_evaluation.score(me) if best_evaluation else "None"})')
             best_move, best_evaluation = move, evaluation
         timer.stop_step(move_id)
         timer.print_step(move_id)
 
     return best_move, best_evaluation
 
+
+def guess_player_next_move(player: int, origin_state: State) -> State:
+    player_last_move = origin_state.last_move[player]
+    debug(f'player {player} last move was {direction_str(player_last_move)}')
+    valid_moves_for_player = origin_state.get_valid_moves_for_player(player)
+
+    if not valid_moves_for_player:
+        debug(f'assume {player} dies')
+        return origin_state.kill(player)
+
+    best_move = valid_moves_for_player[0]
+    best_state = origin_state.with_player_move(player, best_move)
+    best_score = score_for_other_player(player, best_state, best_move == player_last_move)
+
+    for move in valid_moves_for_player[1:]:
+        state = origin_state.with_player_move(player, move)
+        score = score_for_other_player(player, state, move == player_last_move)
+        if score > best_score:
+            best_move, best_state, best_score = move, state, score
+
+    if LOG_THRESHOLD <= LOG_DEBUG:
+        if best_score == [0]:
+            debug(f"Last move for {player} o7")
+        elif best_score == [2]:
+            debug(f"Assuming {player} will keep going {direction_str(best_move)}")
+        else:
+            debug(f"Player {player} cannot go {direction_str(player_last_move)}, will go {direction_str(best_move)} instead")
+
+    return best_state
+
+def score_for_other_player(player: int, state: State, same_as_last_move: bool) -> list[int]:
+    valid_moves_for_player = state.get_valid_moves_for_player(player)
+    if not valid_moves_for_player:
+        return [0]
+    elif same_as_last_move:
+        return [2]
+    else:
+        return [1]
 
 def game_loop():
     state = None
