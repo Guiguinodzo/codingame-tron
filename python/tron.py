@@ -5,6 +5,7 @@ import sys
 import time
 from collections import deque
 from functools import reduce
+from typing import Self
 
 LOG_DEBUG = 0
 LOG_INFO = 1
@@ -214,9 +215,9 @@ class State:
     def is_player_alive(self, player: int) -> bool:
         return self.heads[player] > -1
 
-    def get_winner(self) -> int:
+    def get_winner(self) -> int | None:
         alive_players = self.get_alive_players()
-        return alive_players[0] if len(alive_players) == 1 else -1
+        return alive_players[0] if len(alive_players) == 1 else None
 
     def next_player(self, current_player: int) -> int:
         next_player = (current_player + 1) % self.nb_players
@@ -600,7 +601,7 @@ def choose_based_on_evaluation(me: int, state: State, depth=0, move_before='') -
         move_id = f'{move_before}{direction_str(move)}'
         timer.start_step(move_id)
         if depth == 0:
-            if TIME_CUTOFF and timer.elapsed_time_ratio() > 0.85:
+            if TIME_CUTOFF and timer.elapsed_time_ratio() > 0.80:
                 debug(f'Time almost out: {timer.elapsed_time_ratio() * 100:.2f} % '
                       f'({timer.elapsed_time() * 1000:.2f} ms)', LOG_ERROR)
                 break
@@ -659,6 +660,174 @@ def score_for_other_player(player: int, state: State, same_as_last_move: bool) -
     else:
         return [1]
 
+
+
+class MiniMaxNode:
+
+    me: int
+    id: str
+    player_of_turn: int
+    before_move_state: State
+    after_move_state: State
+    move: int | None
+
+    score: list[float] | None
+
+    parent: Self | None = None
+    children: list[Self] | None = None
+
+    def __init__(self, me: int, before_move_state: State, player_of_turn: int, move: int | None, parent: Self | None = None):
+        self.me = me
+        self.parent = parent
+        self.id = f'{parent.id}_{player_of_turn}{direction_str(move)[0]}' if parent else f'{player_of_turn}{direction_str(move)[0]}'
+        self.player_of_turn = player_of_turn
+        self.move = move
+        self.before_move_state = before_move_state
+        self.after_move_state = before_move_state.with_player_move(player_of_turn, move) if move else before_move_state
+
+    def evaluate(self) -> Evaluation:
+        evaluation = Evaluation(self.after_move_state, self.me)
+        evaluation.compute_all(self.id)
+        evaluation.paint(self.id)
+        self.score = evaluation.score(self.me)
+        return evaluation
+
+    def next_player(self) -> int:
+        return self.after_move_state.next_player(self.player_of_turn)
+
+    def type(self):
+        return 'min' if self.me == self.player_of_turn else 'max'
+
+    def compute_children(self):
+        if self.children:
+            return self.children
+
+        next_player = self.next_player()
+        valid_moves_for_player = self.after_move_state.get_valid_moves_for_player(next_player)
+        return [
+            MiniMaxNode(me=self.me, before_move_state=self.after_move_state, player_of_turn=next_player, move=move, parent=self)
+            for move in valid_moves_for_player
+        ]
+
+    def dead_turn(self):
+        next_player = self.next_player()
+        return MiniMaxNode(me=self.me, before_move_state=self.after_move_state, player_of_turn=next_player, move=None, parent=self)
+
+
+def minimax(me: int, state: State, depth=0) -> tuple[int, Evaluation | None]:
+
+    origin_nodes = [
+        MiniMaxNode(me=me, before_move_state=state, player_of_turn=me, move=move)
+        for move in state.get_valid_moves_for_player(me)
+    ]
+
+    best_score : list[float] | None = None
+    best_node : MiniMaxNode | None = None
+
+    for node in origin_nodes:
+        recursive_minimax(node, depth)
+        if best_score is None or node.score > best_score:
+            best_score = node.score
+            best_node = node
+
+    return (best_node.move, None) if best_node else (D_DOWN, None)
+
+def recursive_minimax(
+        node: MiniMaxNode,
+        max_depth: int,
+        depth_above: int = -1,
+        alpha : list[float] | None = None,
+        beta: list[float] | None = None
+) -> MiniMaxNode:
+    """
+    Evaluation minimax du node
+    :param node: node à évaluer
+    :param max_depth: profondeur à laquelle descendre
+    :param depth_above: profondeur du niveau appelant N+1
+    :param alpha: Valeur maximum pour un node Min
+    :param beta: Valeur minimum pour un node Max
+    :return:
+    """
+    if alpha is None:
+        alpha = [-9e99]
+    if beta is None:
+        beta = [9e99]
+
+    if alpha > beta:
+        debug(f'recursive_minimax : alpha: {alpha} est supérieur à beta: {beta}', LOG_ERROR)
+
+    depth = depth_above + 1 if node.player_of_turn == node.me else depth_above
+
+    debug(f'recursive_minimax : node={node.id} max_depth={max_depth} depth={depth_above}->{depth} alpha={alpha} beta={beta} ')
+
+    if depth == max_depth: # leaf
+        node.evaluate()
+        return node
+
+    children = node.compute_children()
+
+    if not children:
+        winner = node.after_move_state.get_winner()
+        if winner:
+            node.score = [9e99] if node.me == winner else [-9e99]
+
+        if node.me == node.player_of_turn:
+            node.score = [-9e99]
+        else:
+            score = recursive_minimax(node.dead_turn(), max_depth, depth, alpha, beta).score
+            node.score = score
+        return node
+
+
+    best_score, best_child = None, None
+
+    for child in children:
+
+        score = recursive_minimax(child, max_depth, depth, alpha, beta).score
+
+        if node.type() == 'min':
+
+            if not best_score or score < best_score:
+                best_score, best_child = score, child
+
+            if score <= alpha:
+                # élagage alpha : le score du node 'min' courant sera au maximum $score qui est inférieur à alpha donc
+                # le node 'max' au-dessus va l'ignorer (il préfèrera le node avec le score alpha)
+                debug(f'recursive_minimax : elagage alpha for {node.id} on child {child.id}: alpha={alpha} score={score}', LOG_DEBUG)
+                break
+
+            beta = min(beta, score)
+
+
+        elif node.type() == 'max':
+
+            if not best_score or score > best_score:
+                best_score, best_child = score, child
+
+            if score >= beta:
+                # élagage beta : le score du node 'max' courant sera au minimum $score qui est supérieur à beta donc
+                # le node 'min' au-dessus va l'ignorer (il préfèrera le node avec le score beta)
+                debug(f'recursive_minimax : elagage beta for {node.id} on child {child.id}: beta={beta} score={score}', LOG_DEBUG)
+                break
+
+            alpha = max(alpha, score)
+
+    node.score = best_score
+
+    return node
+
+def compute_minimax_depth_from_nb_free_cells(nb_free_cells: int) -> int:
+    if nb_free_cells > 300:
+        return 0
+    elif nb_free_cells > 250:
+        return 1
+    elif nb_free_cells > 100:
+        return 2
+    else:
+        return 3
+
+
+
 def game_loop():
     state = None
     turn = 0
@@ -697,9 +866,8 @@ def game_loop():
         free_cells = state.count_free_cells()
         debug(f"Free cell count: {free_cells}") # 350 > depth 2 OK
 
-        depth = 1 if free_cells > 350 else 2
-
-        direction, _ = choose_based_on_evaluation(me, state, depth)
+        # direction, _ = choose_based_on_evaluation(me, state, 1 if free_cells > 350 else 2)
+        direction, _ = minimax(me, state, compute_minimax_depth_from_nb_free_cells(free_cells))
 
         moves_for_player = state.get_valid_moves_for_player(me)
 
